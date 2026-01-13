@@ -1,0 +1,460 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/lib/context/auth-context'
+import { profilesAPI, aiAPI, useTags } from '@/lib/api'
+import type { Profile, UpdateProfileRequest, ProfessionType } from '@/lib/api/types'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { toast } from 'sonner'
+import { Loader2, Plus, X, Sparkles } from 'lucide-react'
+
+export default function ProfilePage() {
+  const router = useRouter()
+  const { user, isAuthenticated, loading: authLoading } = useAuth()
+  const { tags } = useTags()
+  const [loading, setLoading] = useState(false)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [profile, setProfile] = useState<Profile | null>(null)
+  const [formData, setFormData] = useState<UpdateProfileRequest>({
+    profession_type: 'CA' as ProfessionType,
+    title: '',
+    bio: '',
+    skills: [],
+    location: '',
+    city: '',
+    state: '',
+    experience_years: 0,
+    availability: 'AVAILABLE',
+    profile_picture: '',
+    linkedin_url: '',
+    website_url: '',
+    certifications: [],
+    languages: [],
+    hourly_rate: undefined,
+  })
+  const [newSkill, setNewSkill] = useState('')
+  const [newCertification, setNewCertification] = useState('')
+  const [newLanguage, setNewLanguage] = useState('')
+
+  useEffect(() => {
+    if (!authLoading && !isAuthenticated) {
+      router.push('/auth/login')
+    } else if (user?.role !== 'PROFESSIONAL') {
+      toast.error('Only professionals can create profiles')
+      router.push('/dashboard')
+    } else {
+      loadProfile()
+    }
+  }, [authLoading, isAuthenticated, user])
+
+  const loadProfile = async () => {
+    setLoading(true)
+    try {
+      const data = await profilesAPI.getMyProfile()
+      setProfile(data)
+      setFormData({
+        profession_type: data.profession_type,
+        title: data.title,
+        bio: data.bio,
+        skills: data.skills,
+        location: data.location,
+        city: data.city,
+        state: data.state,
+        experience_years: data.experience_years,
+        availability: data.availability,
+        profile_picture: data.profile_picture,
+        linkedin_url: data.linkedin_url,
+        website_url: data.website_url,
+        certifications: data.certifications,
+        languages: data.languages,
+        hourly_rate: data.hourly_rate,
+      })
+    } catch (error) {
+      // Profile doesn't exist yet
+      console.log('No profile found, user can create one')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+
+    try {
+      if (profile) {
+        await profilesAPI.updateProfile(formData)
+        toast.success('Profile updated successfully!')
+      } else {
+        await profilesAPI.createProfile(formData)
+        toast.success('Profile created successfully!')
+      }
+      await loadProfile()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Failed to save profile')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleAISuggestions = async () => {
+    if (!formData.bio || !formData.profession_type) {
+      toast.error('Please add a bio and select profession type first')
+      return
+    }
+
+    setAiLoading(true)
+    try {
+      const response = await aiAPI.suggestTags({
+        text: formData.bio,
+        profession_type: formData.profession_type,
+      })
+      const newSkills = response.suggested_tags.filter(tag => !formData.skills?.includes(tag))
+      setFormData({ ...formData, skills: [...(formData.skills || []), ...newSkills] })
+      toast.success(`Added ${newSkills.length} AI-suggested skills!`)
+    } catch (error) {
+      toast.error('Failed to get AI suggestions')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const addItem = (field: 'skills' | 'certifications' | 'languages', value: string) => {
+    if (!value.trim()) return
+    const current = formData[field] || []
+    if (current.includes(value)) {
+      toast.error('Already added')
+      return
+    }
+    setFormData({ ...formData, [field]: [...current, value.trim()] })
+  }
+
+  const removeItem = (field: 'skills' | 'certifications' | 'languages', value: string) => {
+    setFormData({
+      ...formData,
+      [field]: (formData[field] || []).filter((item: string) => item !== value),
+    })
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-background-light py-12">
+      <div className="max-w-4xl mx-auto px-4">
+        <Card>
+          <CardHeader>
+            <CardTitle>{profile ? 'Edit Profile' : 'Create Professional Profile'}</CardTitle>
+            <CardDescription>
+              {profile
+                ? 'Update your professional information to attract more clients'
+                : 'Create your professional profile to start receiving client inquiries'}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="profession_type">Profession Type</Label>
+                  <Select
+                    value={formData.profession_type}
+                    onValueChange={(value: ProfessionType) =>
+                      setFormData({ ...formData, profession_type: value })
+                    }
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="CA">Chartered Accountant</SelectItem>
+                      <SelectItem value="CA_APPRENTICE">CA Apprentice</SelectItem>
+                      <SelectItem value="LAWYER">Lawyer</SelectItem>
+                      <SelectItem value="ADVOCATE">Advocate</SelectItem>
+                      <SelectItem value="LAW_FIRM">Law Firm</SelectItem>
+                      <SelectItem value="CA_FIRM">CA Firm</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="title">Professional Title</Label>
+                  <Input
+                    id="title"
+                    placeholder="e.g., Senior Tax Consultant"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <Label htmlFor="bio">Professional Bio</Label>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={handleAISuggestions}
+                    disabled={aiLoading}
+                  >
+                    {aiLoading ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <Sparkles className="mr-2 h-4 w-4" />
+                    )}
+                    AI Suggest Skills
+                  </Button>
+                </div>
+                <Textarea
+                  id="bio"
+                  placeholder="Describe your expertise, experience, and what makes you unique..."
+                  value={formData.bio}
+                  onChange={(e) => setFormData({ ...formData, bio: e.target.value })}
+                  rows={6}
+                  required
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div>
+                  <Label htmlFor="city">City</Label>
+                  <Input
+                    id="city"
+                    placeholder="Mumbai"
+                    value={formData.city}
+                    onChange={(e) => setFormData({ ...formData, city: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="state">State</Label>
+                  <Select value={formData.state} onValueChange={(value) => setFormData({ ...formData, state: value })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select state" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tags?.states?.map((state: string) => (
+                        <SelectItem key={state} value={state}>
+                          {state}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="experience_years">Years of Experience</Label>
+                  <Input
+                    id="experience_years"
+                    type="number"
+                    min="0"
+                    value={formData.experience_years}
+                    onChange={(e) => setFormData({ ...formData, experience_years: parseInt(e.target.value) || 0 })}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="availability">Availability</Label>
+                  <Select
+                    value={formData.availability}
+                    onValueChange={(value) => setFormData({ ...formData, availability: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="AVAILABLE">Available</SelectItem>
+                      <SelectItem value="NOT_AVAILABLE">Not Available</SelectItem>
+                      <SelectItem value="PART_TIME">Part Time</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label htmlFor="hourly_rate">Hourly Rate (₹)</Label>
+                  <Input
+                    id="hourly_rate"
+                    type="number"
+                    min="0"
+                    placeholder="1500"
+                    value={formData.hourly_rate || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, hourly_rate: parseInt(e.target.value) || undefined })
+                    }
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label>Skills</Label>
+                <div className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Add a skill"
+                    value={newSkill}
+                    onChange={(e) => setNewSkill(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addItem('skills', newSkill)
+                        setNewSkill('')
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      addItem('skills', newSkill)
+                      setNewSkill('')
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {formData.skills?.map((skill: string) => (
+                    <Badge key={skill} variant="secondary">
+                      {skill}
+                      <button
+                        type="button"
+                        onClick={() => removeItem('skills', skill)}
+                        className="ml-2 hover:text-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label>Certifications</Label>
+                <div className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Add a certification"
+                    value={newCertification}
+                    onChange={(e) => setNewCertification(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addItem('certifications', newCertification)
+                        setNewCertification('')
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      addItem('certifications', newCertification)
+                      setNewCertification('')
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {formData.certifications?.map((cert: string) => (
+                    <Badge key={cert} variant="secondary">
+                      {cert}
+                      <button
+                        type="button"
+                        onClick={() => removeItem('certifications', cert)}
+                        className="ml-2 hover:text-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <Label>Languages</Label>
+                <div className="flex gap-2 mb-2">
+                  <Input
+                    placeholder="Add a language"
+                    value={newLanguage}
+                    onChange={(e) => setNewLanguage(e.target.value)}
+                    onKeyPress={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        addItem('languages', newLanguage)
+                        setNewLanguage('')
+                      }
+                    }}
+                  />
+                  <Button
+                    type="button"
+                    onClick={() => {
+                      addItem('languages', newLanguage)
+                      setNewLanguage('')
+                    }}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {formData.languages?.map((lang: string) => (
+                    <Badge key={lang} variant="secondary">
+                      {lang}
+                      <button
+                        type="button"
+                        onClick={() => removeItem('languages', lang)}
+                        className="ml-2 hover:text-red-600"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="linkedin_url">LinkedIn URL</Label>
+                  <Input
+                    id="linkedin_url"
+                    type="url"
+                    placeholder="https://linkedin.com/in/yourprofile"
+                    value={formData.linkedin_url}
+                    onChange={(e) => setFormData({ ...formData, linkedin_url: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="website_url">Website URL</Label>
+                  <Input
+                    id="website_url"
+                    type="url"
+                    placeholder="https://yourwebsite.com"
+                    value={formData.website_url}
+                    onChange={(e) => setFormData({ ...formData, website_url: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {profile ? 'Update Profile' : 'Create Profile'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  )
+}

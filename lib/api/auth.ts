@@ -1,0 +1,72 @@
+/**
+ * Auth API endpoints
+ */
+
+import { apiClient } from './client';
+import type {
+  AuthResponse,
+  LoginRequest,
+  RegisterRequest,
+  User,
+  ForgotPasswordRequest,
+  ResetPasswordRequest,
+  VerifyEmailRequest,
+} from './types';
+
+export const authAPI = {
+  // Register new user
+  register: async (data: RegisterRequest): Promise<AuthResponse> => {
+    return apiClient.post<AuthResponse>('/auth/register', data);
+  },
+
+  // Login
+  login: async (data: LoginRequest): Promise<AuthResponse> => {
+    return apiClient.post<AuthResponse>('/auth/login', data);
+  },
+
+  // Get current user
+  getMe: async (): Promise<User> => {
+    return apiClient.get<User>('/auth/me');
+  },
+
+  // Logout
+  logout: async (): Promise<void> => {
+    await apiClient.post('/auth/logout');
+    apiClient.setToken(null);
+  },
+
+  // Refresh token
+  refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
+    return apiClient.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken });
+  },
+
+  // Email verification
+  verifyEmail: async (data: VerifyEmailRequest): Promise<AuthResponse> => {
+    return apiClient.post<AuthResponse>('/auth/verify-email', data);
+  },
+
+  // Resend verification email
+  resendVerification: async (email: string): Promise<{ message: string }> => {
+    return apiClient.post('/auth/resend-verification', { email });
+  },
+
+  // Forgot password
+  forgotPassword: async (data: ForgotPasswordRequest): Promise<{ message: string }> => {
+    return apiClient.post('/auth/forgot-password', data);
+  },
+
+  // Reset password
+  resetPassword: async (data: ResetPasswordRequest): Promise<{ message: string }> => {
+    return apiClient.post('/auth/reset-password', data);
+  },
+
+  // Google OAuth - Get auth URL
+  getGoogleAuthUrl: async (): Promise<{ auth_url: string; state: string }> => {
+    return apiClient.get('/auth/google/login');
+  },
+
+  // Google OAuth callback
+  googleCallback: async (data: { code: string }): Promise<AuthResponse> => {
+    return apiClient.post<AuthResponse>('/auth/google/callback', data);
+  },
+};
