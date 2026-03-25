@@ -5,6 +5,7 @@
 import { apiClient } from './client';
 import type {
   AuthResponse,
+  LoginAuthResponse,
   LoginRequest,
   RegisterRequest,
   User,
@@ -21,12 +22,19 @@ export const authAPI = {
 
   // Login
   login: async (data: LoginRequest): Promise<AuthResponse> => {
-    return apiClient.post<AuthResponse>('/auth/login', data);
+    const response = await apiClient.post<LoginAuthResponse>('/auth/login', data);
+    // Normalize nested tokens to flat format
+    return {
+      user: response.user,
+      access_token: response.tokens.access_token,
+      refresh_token: response.tokens.refresh_token,
+    };
   },
 
   // Get current user
   getMe: async (): Promise<User> => {
-    return apiClient.get<User>('/auth/me');
+    const response = await apiClient.get<{ user: User }>('/auth/me');
+    return response.user; // Unwrap the nested user object
   },
 
   // Logout

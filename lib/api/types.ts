@@ -73,6 +73,16 @@ export interface AuthResponse {
   refresh_token: string;
 }
 
+// For login endpoint which nests tokens
+export interface LoginAuthResponse {
+  message: string;
+  user: User;
+  tokens: {
+    access_token: string;
+    refresh_token: string;
+  };
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -188,3 +198,21 @@ export interface AITagSuggestionRequest {
 export interface AITagSuggestionResponse {
   suggested_tags: string[];
 }
+
+export interface VerificationDocument {
+  id: string;
+  user_id: string;
+  document_type: string;
+  file_url: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
+export interface AdminReviewData {
+  status: 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+}
+

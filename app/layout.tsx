@@ -2,22 +2,21 @@ import type React from "react"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import "./globals.css"
-import Navigation from "@/components/layout/navigation"
-import Footer from "@/components/layout/footer"
 import { AuthProvider } from "@/lib/context/auth-context"
 import { Toaster } from "@/components/ui/sonner"
+import SidebarLayout from "@/components/layout/sidebar-layout"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
-  title: "CounselMate - Connect with Top CAs & Lawyers",
+  title: "Consultancy - Find Verified Professionals",
   description:
-    "A trusted marketplace connecting clients with verified Chartered Accountants and Lawyers for professional services.",
+    "A trusted marketplace connecting clients with verified Chartered Accountants and Consultants for professional services.",
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://counselmate.app",
-    siteName: "CounselMate",
+    url: "https://consultancy.app",
+    siteName: "Consultancy",
   },
     generator: 'v0.app'
 }
@@ -31,9 +30,9 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <AuthProvider>
-          <Navigation />
-          <main>{children}</main>
-          <Footer />
+          <SidebarLayout>
+            {children}
+          </SidebarLayout>
           <Toaster />
         </AuthProvider>
       </body>

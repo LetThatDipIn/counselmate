@@ -10,4 +10,5 @@ export * from './users';
 export * from './search';
 export * from './subscription';
 export * from './ai';
+export * from './verification';
 export * from '../hooks/use-api';

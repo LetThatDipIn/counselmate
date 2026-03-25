@@ -35,10 +35,10 @@ export default function Navigation() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           <Link href="/" className="flex items-center gap-2">
-            <img src="/logo.png" alt="CounselMate" className="h-8" />
+            <img src="/logo.png" alt="Consultancy" className="h-8" />
             <span className="font-bold text-lg">
-              <span className="text-[#1e3a8a]">Counsel</span>
-              <span className="text-black">Mate</span>
+              <span className="text-[#1e3a8a]">Consult</span>
+              <span className="text-black">ancy</span>
             </span>
           </Link>
 
@@ -81,8 +81,8 @@ export default function Navigation() {
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuItem asChild>
-                      <Link href="/settings" className="cursor-pointer">
-                        Settings
+                      <Link href="/settings/role" className="cursor-pointer">
+                        Account Settings
                       </Link>
                     </DropdownMenuItem>
                     <DropdownMenuSeparator />

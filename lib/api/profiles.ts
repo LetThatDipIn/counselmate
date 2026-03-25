@@ -14,22 +14,26 @@ import type {
 export const profilesAPI = {
   // Get profile by ID
   getProfile: async (id: string): Promise<Profile> => {
-    return apiClient.get<Profile>(`/profiles/${id}`);
+    const response = await apiClient.get<any>(`/profiles/${id}`);
+    return response.profile;
   },
 
   // Get current user's profile
   getMyProfile: async (): Promise<Profile> => {
-    return apiClient.get<Profile>('/profiles/me');
+    const response = await apiClient.get<any>('/profiles/me');
+    return response.profile;
   },
 
   // Create profile
   createProfile: async (data: UpdateProfileRequest): Promise<Profile> => {
-    return apiClient.post<Profile>('/profiles', data);
+    const response = await apiClient.post<any>('/profiles', data);
+    return response.profile;
   },
 
   // Update profile
   updateProfile: async (data: UpdateProfileRequest): Promise<Profile> => {
-    return apiClient.put<Profile>('/profiles', data);
+    const response = await apiClient.put<any>('/profiles', data);
+    return response.profile;
   },
 
   // Delete profile
