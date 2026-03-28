@@ -30,6 +30,7 @@ interface WSMessage {
   type: WSMessageType
   booking_id: string
   sender_id?: string
+  receiver_id?: string
   content?: string
   sdp_offer?: string
   sdp_answer?: string
@@ -45,6 +46,14 @@ interface LogItem {
   at: string
 }
 
+interface PersistedChatMessage {
+  id: string
+  booking_id: string
+  sender_id: string
+  content: string
+  created_at: string
+}
+
 const rtcConfig: RTCConfiguration = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 }
@@ -54,9 +63,13 @@ export default function WebSocketTestPage() {
 
   const [bookingId, setBookingId] = useState("test-booking-1")
   const [role, setRole] = useState("user")
+  const [targetPeerId, setTargetPeerId] = useState("")
   const [chatInput, setChatInput] = useState("")
   const [connected, setConnected] = useState(false)
   const [guestId, setGuestId] = useState("")
+  const [participants, setParticipants] = useState<string[]>([])
+  const [chatMessages, setChatMessages] = useState<PersistedChatMessage[]>([])
+  const [chatLoading, setChatLoading] = useState(false)
   const [logs, setLogs] = useState<LogItem[]>([])
   const [rawPayload, setRawPayload] = useState(
     JSON.stringify(
@@ -72,6 +85,8 @@ export default function WebSocketTestPage() {
 
   const [localReady, setLocalReady] = useState(false)
   const [inCall, setInCall] = useState(false)
+  const [localAudioLevel, setLocalAudioLevel] = useState(0)
+  const [remoteAudioLevel, setRemoteAudioLevel] = useState(0)
   const [terminationReason, setTerminationReason] = useState("Manual terminate from tester")
 
   const wsRef = useRef<WebSocket | null>(null)
@@ -79,6 +94,9 @@ export default function WebSocketTestPage() {
   const localStreamRef = useRef<MediaStream | null>(null)
   const localVideoRef = useRef<HTMLVideoElement>(null)
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const localAudioAnalyserRef = useRef<AnalyserNode | null>(null)
+  const remoteAudioAnalyserRef = useRef<AnalyserNode | null>(null)
+  const audioMonitorRef = useRef<number | null>(null)
 
   const addLog = useCallback((direction: LogItem["direction"], text: string) => {
     setLogs((prev) => [
@@ -102,6 +120,47 @@ export default function WebSocketTestPage() {
     const generated = `guest-${crypto.randomUUID()}`
     localStorage.setItem("ws_test_guest_id", generated)
     setGuestId(generated)
+  }, [])
+
+  const apiBase = useMemo(() => process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080/api", [])
+
+  const fetchChatHistory = useCallback(async (booking: string) => {
+    if (!booking) return
+    setChatLoading(true)
+    try {
+      const response = await fetch(`${apiBase}/ws/messages?booking=${encodeURIComponent(booking)}&limit=200`)
+      if (!response.ok) throw new Error(`Failed to load chat history (${response.status})`)
+      const data = await response.json()
+      setChatMessages((data.messages || []) as PersistedChatMessage[])
+    } catch (error) {
+      addLog("sys", `Chat history fetch failed: ${String(error)}`)
+    } finally {
+      setChatLoading(false)
+    }
+  }, [addLog, apiBase])
+
+  const startAudioMonitor = useCallback(() => {
+    if (audioMonitorRef.current) {
+      window.clearInterval(audioMonitorRef.current)
+    }
+
+    audioMonitorRef.current = window.setInterval(() => {
+      const measure = (analyser: AnalyserNode | null) => {
+        if (!analyser) return 0
+        const buffer = new Uint8Array(analyser.frequencyBinCount)
+        analyser.getByteTimeDomainData(buffer)
+        let sum = 0
+        for (let i = 0; i < buffer.length; i++) {
+          const normalized = (buffer[i] - 128) / 128
+          sum += normalized * normalized
+        }
+        const rms = Math.sqrt(sum / buffer.length)
+        return Math.min(100, Math.round(rms * 300))
+      }
+
+      setLocalAudioLevel(measure(localAudioAnalyserRef.current))
+      setRemoteAudioLevel(measure(remoteAudioAnalyserRef.current))
+    }, 120)
   }, [])
 
   const wsUrl = useMemo(() => {
@@ -144,6 +203,7 @@ export default function WebSocketTestPage() {
       sendMessage({
         type: "ice_candidate",
         booking_id: bookingId,
+        receiver_id: targetPeerId || undefined,
         ice_candidate: JSON.stringify(event.candidate),
       })
     }
@@ -153,16 +213,38 @@ export default function WebSocketTestPage() {
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream
       }
+
+      const remoteAudioTrack = remoteStream.getAudioTracks()[0]
+      if (remoteAudioTrack) {
+        const ctx = new AudioContext()
+        const source = ctx.createMediaStreamSource(new MediaStream([remoteAudioTrack]))
+        const analyser = ctx.createAnalyser()
+        analyser.fftSize = 256
+        source.connect(analyser)
+        remoteAudioAnalyserRef.current = analyser
+        startAudioMonitor()
+      }
       addLog("sys", "Remote track received")
     }
 
     pcRef.current = pc
     return pc
-  }, [addLog, bookingId, sendMessage])
+  }, [addLog, bookingId, sendMessage, startAudioMonitor, targetPeerId])
 
   const prepareLocalMedia = useCallback(async (video: boolean) => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video })
     localStreamRef.current = stream
+
+    const audioTrack = stream.getAudioTracks()[0]
+    if (audioTrack) {
+      const ctx = new AudioContext()
+      const source = ctx.createMediaStreamSource(new MediaStream([audioTrack]))
+      const analyser = ctx.createAnalyser()
+      analyser.fftSize = 256
+      source.connect(analyser)
+      localAudioAnalyserRef.current = analyser
+      startAudioMonitor()
+    }
 
     if (localVideoRef.current) {
       localVideoRef.current.srcObject = stream
@@ -172,7 +254,7 @@ export default function WebSocketTestPage() {
     stream.getTracks().forEach((track) => pc.addTrack(track, stream))
     setLocalReady(true)
     addLog("sys", `Local ${video ? "audio+video" : "audio"} ready`)
-  }, [addLog, ensurePeerConnection])
+  }, [addLog, ensurePeerConnection, startAudioMonitor])
 
   const startCall = useCallback(async (video: boolean) => {
     try {
@@ -189,6 +271,7 @@ export default function WebSocketTestPage() {
       sendMessage({
         type: "call_offer",
         booking_id: bookingId,
+        receiver_id: targetPeerId || undefined,
         sdp_offer: JSON.stringify(offer),
       })
 
@@ -209,12 +292,37 @@ export default function WebSocketTestPage() {
       pcRef.current.close()
       pcRef.current = null
     }
+    if (audioMonitorRef.current) {
+      window.clearInterval(audioMonitorRef.current)
+      audioMonitorRef.current = null
+    }
+    localAudioAnalyserRef.current = null
+    remoteAudioAnalyserRef.current = null
+    setLocalAudioLevel(0)
+    setRemoteAudioLevel(0)
     setLocalReady(false)
     setInCall(false)
   }, [])
 
   const onIncoming = useCallback(async (msg: WSMessage) => {
     addLog("in", JSON.stringify(msg))
+
+    if (msg.sender_id) {
+      setParticipants((prev) => (prev.includes(msg.sender_id as string) ? prev : [...prev, msg.sender_id as string]))
+    }
+
+    if (msg.type === "chat" && msg.content) {
+      setChatMessages((prev) => [
+        ...prev,
+        {
+          id: crypto.randomUUID(),
+          booking_id: msg.booking_id,
+          sender_id: msg.sender_id || "unknown",
+          content: msg.content || "",
+          created_at: msg.timestamp || new Date().toISOString(),
+        },
+      ])
+    }
 
     try {
       switch (msg.type) {
@@ -228,6 +336,7 @@ export default function WebSocketTestPage() {
           sendMessage({
             type: "call_answer",
             booking_id: bookingId,
+            receiver_id: msg.sender_id,
             sdp_answer: JSON.stringify(answer),
           })
           setInCall(true)
@@ -271,8 +380,10 @@ export default function WebSocketTestPage() {
 
     socket.onopen = () => {
       setConnected(true)
+      setParticipants((prev) => (guestId && !prev.includes(guestId) ? [...prev, guestId] : prev))
       addLog("sys", `Connected: ${wsUrl}`)
       toast.success("WebSocket connected")
+      fetchChatHistory(bookingId)
     }
 
     socket.onmessage = (event) => {
@@ -294,7 +405,7 @@ export default function WebSocketTestPage() {
       addLog("sys", "WebSocket disconnected")
       endCallLocally()
     }
-  }, [addLog, bookingId, endCallLocally, onIncoming, wsUrl])
+  }, [addLog, bookingId, endCallLocally, fetchChatHistory, guestId, onIncoming, wsUrl])
 
   const disconnect = useCallback(() => {
     wsRef.current?.close()
@@ -303,9 +414,17 @@ export default function WebSocketTestPage() {
   }, [])
 
   useEffect(() => {
+    if (!bookingId) return
+    fetchChatHistory(bookingId)
+  }, [bookingId, fetchChatHistory])
+
+  useEffect(() => {
     return () => {
       disconnect()
       endCallLocally()
+      if (audioMonitorRef.current) {
+        window.clearInterval(audioMonitorRef.current)
+      }
     }
   }, [disconnect, endCallLocally])
 
@@ -322,7 +441,7 @@ export default function WebSocketTestPage() {
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            <div className="grid gap-3 md:grid-cols-3">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <Input value={bookingId} onChange={(e) => setBookingId(e.target.value)} placeholder="booking id" />
               <select
                 className="h-10 rounded-md border border-input bg-background px-3 text-sm"
@@ -333,8 +452,29 @@ export default function WebSocketTestPage() {
                 <option value="consultant">consultant</option>
                 <option value="PROFESSIONAL">PROFESSIONAL</option>
               </select>
+              <Input
+                value={targetPeerId}
+                onChange={(e) => setTargetPeerId(e.target.value)}
+                placeholder="target peer id (optional)"
+              />
               <Input value={wsUrl} readOnly />
             </div>
+
+            {participants.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500">Participants:</span>
+                {participants.map((id) => (
+                  <button
+                    key={id}
+                    type="button"
+                    className={`rounded border px-2 py-1 text-xs ${targetPeerId === id ? "bg-blue-600 text-white" : "bg-white"}`}
+                    onClick={() => setTargetPeerId(id)}
+                  >
+                    {id}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div className="flex flex-wrap gap-2">
               <Button onClick={connect} disabled={connected}>Connect</Button>
@@ -358,7 +498,23 @@ export default function WebSocketTestPage() {
                 />
                 <Button
                   onClick={() => {
-                    sendMessage({ type: "chat", booking_id: bookingId, content: chatInput })
+                    if (!chatInput.trim()) return
+                    sendMessage({
+                      type: "chat",
+                      booking_id: bookingId,
+                      receiver_id: targetPeerId || undefined,
+                      content: chatInput,
+                    })
+                    setChatMessages((prev) => [
+                      ...prev,
+                      {
+                        id: crypto.randomUUID(),
+                        booking_id: bookingId,
+                        sender_id: guestId || user?.id || "me",
+                        content: chatInput,
+                        created_at: new Date().toISOString(),
+                      },
+                    ])
                     setChatInput("")
                   }}
                   disabled={!connected}
@@ -367,11 +523,33 @@ export default function WebSocketTestPage() {
                 </Button>
               </div>
 
+              <div className="flex items-center justify-between">
+                <div className="text-xs text-slate-500">Persistent chat history (DB-backed)</div>
+                <Button variant="outline" size="sm" onClick={() => fetchChatHistory(bookingId)} disabled={chatLoading}>
+                  {chatLoading ? "Loading..." : "Refresh history"}
+                </Button>
+              </div>
+
+              <div className="max-h-44 space-y-2 overflow-auto rounded-md border bg-white p-2 text-sm">
+                {chatMessages.length === 0 ? (
+                  <div className="text-slate-500">No chat messages yet</div>
+                ) : (
+                  chatMessages.map((m) => (
+                    <div key={m.id} className="rounded border bg-slate-50 p-2">
+                      <div className="text-[11px] text-slate-500">
+                        {m.sender_id} • {new Date(m.created_at).toLocaleTimeString()}
+                      </div>
+                      <div>{m.content}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+
               <div className="flex flex-wrap gap-2">
-                <Button variant="outline" onClick={() => sendMessage({ type: "typing_start", booking_id: bookingId })} disabled={!connected}>typing_start</Button>
-                <Button variant="outline" onClick={() => sendMessage({ type: "typing_stop", booking_id: bookingId })} disabled={!connected}>typing_stop</Button>
-                <Button variant="outline" onClick={() => sendMessage({ type: "session_start", booking_id: bookingId })} disabled={!connected}>session_start</Button>
-                <Button variant="outline" onClick={() => sendMessage({ type: "session_end", booking_id: bookingId })} disabled={!connected}>session_end</Button>
+                <Button variant="outline" onClick={() => sendMessage({ type: "typing_start", booking_id: bookingId, receiver_id: targetPeerId || undefined })} disabled={!connected}>typing_start</Button>
+                <Button variant="outline" onClick={() => sendMessage({ type: "typing_stop", booking_id: bookingId, receiver_id: targetPeerId || undefined })} disabled={!connected}>typing_stop</Button>
+                <Button variant="outline" onClick={() => sendMessage({ type: "session_start", booking_id: bookingId, receiver_id: targetPeerId || undefined })} disabled={!connected}>session_start</Button>
+                <Button variant="outline" onClick={() => sendMessage({ type: "session_end", booking_id: bookingId, receiver_id: targetPeerId || undefined })} disabled={!connected}>session_end</Button>
               </div>
 
               <div className="flex gap-2">
@@ -382,7 +560,7 @@ export default function WebSocketTestPage() {
                 />
                 <Button
                   variant="destructive"
-                  onClick={() => sendMessage({ type: "session_terminate", booking_id: bookingId, reason: terminationReason })}
+                  onClick={() => sendMessage({ type: "session_terminate", booking_id: bookingId, receiver_id: targetPeerId || undefined, reason: terminationReason })}
                   disabled={!connected}
                 >
                   session_terminate
@@ -423,7 +601,7 @@ export default function WebSocketTestPage() {
                 <Button
                   variant="outline"
                   onClick={() => {
-                    sendMessage({ type: "call_end", booking_id: bookingId })
+                    sendMessage({ type: "call_end", booking_id: bookingId, receiver_id: targetPeerId || undefined })
                     endCallLocally()
                   }}
                   disabled={!inCall}
@@ -435,10 +613,18 @@ export default function WebSocketTestPage() {
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="space-y-2">
                   <div className="text-xs text-slate-600">Local stream {localReady ? "ready" : "not ready"}</div>
+                  <div className="h-2 w-full overflow-hidden rounded bg-slate-200">
+                    <div className="h-full bg-green-500 transition-all" style={{ width: `${localAudioLevel}%` }} />
+                  </div>
+                  <div className="text-[11px] text-slate-500">Local voice level: {localAudioLevel}</div>
                   <video ref={localVideoRef} autoPlay muted playsInline className="h-44 w-full rounded-md bg-black object-cover" />
                 </div>
                 <div className="space-y-2">
                   <div className="text-xs text-slate-600">Remote stream</div>
+                  <div className="h-2 w-full overflow-hidden rounded bg-slate-200">
+                    <div className="h-full bg-blue-500 transition-all" style={{ width: `${remoteAudioLevel}%` }} />
+                  </div>
+                  <div className="text-[11px] text-slate-500">Remote voice level: {remoteAudioLevel}</div>
                   <video ref={remoteVideoRef} autoPlay playsInline className="h-44 w-full rounded-md bg-black object-cover" />
                 </div>
               </div>
