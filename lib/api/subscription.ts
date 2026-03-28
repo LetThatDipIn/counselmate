@@ -18,7 +18,9 @@ export const subscriptionAPI = {
 
   // Upgrade to premium
   upgradeToPremium: async (): Promise<Subscription> => {
-    return apiClient.post<Subscription>('/subscription/upgrade');
+    return apiClient.post<Subscription>('/subscription/upgrade', {
+      duration_days: 30
+    });
   },
 
   // Downgrade to free

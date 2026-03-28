@@ -73,6 +73,16 @@ export interface AuthResponse {
   refresh_token: string;
 }
 
+// For login endpoint which nests tokens
+export interface LoginAuthResponse {
+  message: string;
+  user: User;
+  tokens: {
+    access_token: string;
+    refresh_token: string;
+  };
+}
+
 export interface LoginRequest {
   email: string;
   password: string;
@@ -188,3 +198,98 @@ export interface AITagSuggestionRequest {
 export interface AITagSuggestionResponse {
   suggested_tags: string[];
 }
+
+export interface VerificationDocument {
+  id: string;
+  user_id: string;
+  document_type: string;
+  file_url: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+  submitted_at: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+}
+
+export interface AdminReviewData {
+  status: 'APPROVED' | 'REJECTED';
+  rejection_reason?: string;
+}
+
+// Services
+export interface Service {
+  id: string;
+  name: string;
+  description: string;
+  base_price: number;
+  category: string;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface ServicesResponse {
+  services: Service[];
+}
+
+// Payments
+export interface PaymentOrder {
+  id: string;
+  order_id: string;
+  user_id: string;
+  service_id?: string;
+  amount: number;
+  currency: string;
+  status: 'created' | 'paid' | 'failed' | 'cancelled';
+  payment_method?: string;
+  created_at: string;
+}
+
+export interface PaymentSplit {
+  platform_fee: number;
+  consultant_payout: number;
+}
+
+export interface CreatePaymentOrderRequest {
+  service_id: string;
+  consultant_id?: string;
+  amount: number;
+  notes?: string;
+}
+
+export interface CreateConsultantRegistrationRequest {
+  upi_id: string;
+}
+
+export interface ConsultantRegistrationResponse {
+  order_id: string;
+  amount: number;
+  currency: string;
+  key_id: string;
+}
+
+export interface PaymentVerificationRequest {
+  razorpay_order_id: string;
+  razorpay_payment_id: string;
+  razorpay_signature: string;
+}
+
+export interface WebhookPayload {
+  event: string;
+  created_at: number;
+  data: {
+    payment: {
+      id: string;
+      entity: string;
+      amount: number;
+      currency: string;
+      status: string;
+      order_id: string;
+      invoice_id?: string;
+      international: boolean;
+      method: string;
+      description?: string;
+      notes?: Record<string, string>;
+    };
+  };
+}
+

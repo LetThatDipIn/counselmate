@@ -35,20 +35,80 @@ export default function GoogleCallbackPage() {
 
       try {
         // Exchange code for tokens
+        console.log('[GoogleCallback] Calling googleCallback with code:', code?.substring(0, 20) + '...');
         const response = await authAPI.googleCallback({ code });
         
+        console.log('[GoogleCallback] Full raw response:', response);
+        console.log('[GoogleCallback] Response keys:', Object.keys(response));
+        console.log('[GoogleCallback] Access token:', response.access_token?.substring(0, 20) + '...');
+        console.log('[GoogleCallback] User:', response.user);
+        console.log('[GoogleCallback] Refresh token:', response.refresh_token?.substring(0, 20) + '...');
+        
+        // Validate response structure
+        if (!response.access_token) {
+          throw new Error(`Missing access_token in response. Response keys: ${Object.keys(response).join(', ')}`);
+        }
+        if (!response.user) {
+          throw new Error(`Missing user in response. Response keys: ${Object.keys(response).join(', ')}`);
+        }
+        if (!response.refresh_token) {
+          throw new Error(`Missing refresh_token in response. Response keys: ${Object.keys(response).join(', ')}`);
+        }
+        
+        console.debug('[GoogleCallback] Response structure is valid');
+        
         // Store access token using apiClient (this also stores in localStorage)
+        console.debug('[GoogleCallback] Calling apiClient.setToken()...');
         apiClient.setToken(response.access_token);
+        console.debug('[GoogleCallback] Token stored via apiClient');
+        
+        // Verify token is in localStorage
+        const storedToken = typeof window !== 'undefined' 
+          ? localStorage.getItem('access_token')
+          : null;
+        console.log('[GoogleCallback] Token in localStorage after setToken:', storedToken?.substring(0, 20) + '...');
         
         // Store refresh token separately
         if (typeof window !== 'undefined') {
           localStorage.setItem('refresh_token', response.refresh_token);
+          console.debug('[GoogleCallback] Refresh token stored');
+        }
+
+        // Check if there's a pending profession type (for professional registration)
+        let user = response.user;
+        if (typeof window !== 'undefined') {
+          const pendingProfessionType = sessionStorage.getItem('pendingProfessionType');
+          const pendingRole = sessionStorage.getItem('pendingRole');
+          
+          if (pendingRole === 'PROFESSIONAL' && pendingProfessionType) {
+            // Update user role and profession type
+            user = {
+              ...user,
+              role: 'PROFESSIONAL',
+              profession_type: pendingProfessionType,
+            };
+            console.debug('[GoogleCallback] Applied pending profession type:', pendingProfessionType);
+            
+            // Clean up session storage
+            sessionStorage.removeItem('pendingProfessionType');
+            sessionStorage.removeItem('pendingRole');
+          } else if (pendingRole === 'APPRENTICE') {
+            // Ensure APPRENTICE role for client signups
+            user = {
+              ...user,
+              role: 'APPRENTICE',
+            };
+            sessionStorage.removeItem('pendingRole');
+          }
         }
         
         // Set user in context
-        setUser(response.user);
+        console.debug('[GoogleCallback] Calling setUser with:', user?.email);
+        setUser(user);
+        console.debug('[GoogleCallback] User set in context');
         
         toast.success('Successfully logged in with Google!');
+        console.log('[GoogleCallback] ✅ All setup complete, redirecting to dashboard');
         router.push('/dashboard');
       } catch (err) {
         console.error('OAuth callback error:', err);

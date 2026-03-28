@@ -27,24 +27,121 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const refreshUser = useCallback(async () => {
     try {
-      const token = apiClient.getToken();
-      if (!token) {
+      // Always reload token from localStorage to ensure we have the latest
+      const storedToken = typeof window !== 'undefined' 
+        ? localStorage.getItem('access_token')
+        : null;
+      
+      console.debug('[AuthContext] Refreshing user, stored token exists:', !!storedToken);
+      
+      if (!storedToken) {
+        console.debug('[AuthContext] No stored token found, setting user to null');
         setUser(null);
+        apiClient.setToken(null);
         return;
       }
 
+      // Update the API client with the token from localStorage
+      apiClient.setToken(storedToken);
+      
+      console.debug('[AuthContext] Calling getMe() to fetch user data');
       const userData = await authAPI.getMe();
+      console.debug('[AuthContext] User data loaded:', userData?.email);
       setUser(userData);
     } catch (error) {
-      console.error('Failed to refresh user:', error);
+      console.error('[AuthContext] Failed to refresh user:', error);
       setUser(null);
       apiClient.setToken(null);
     }
   }, []);
 
   useEffect(() => {
-    refreshUser().finally(() => setLoading(false));
-  }, [refreshUser]);
+    let isMounted = true;
+    
+    const initialize = async () => {
+      try {
+        console.debug('[AuthContext] useEffect: Starting auth initialization');
+        // Check localStorage directly
+        const storedToken = typeof window !== 'undefined' 
+          ? localStorage.getItem('access_token')
+          : null;
+        
+        console.debug('[AuthContext] Stored token exists:', !!storedToken);
+        
+        if (storedToken) {
+          // Ensure API client has the token BEFORE making requests
+          apiClient.setToken(storedToken);
+          console.debug('[AuthContext] API client token set');
+          
+          try {
+            console.debug('[AuthContext] Fetching user data with token:', storedToken.substring(0, 20) + '...');
+            const userData = await authAPI.getMe();
+            console.debug('[AuthContext] User data loaded successfully:', userData?.email);
+            if (isMounted) {
+              setUser(userData);
+              console.debug('[AuthContext] User state updated');
+            }
+          } catch (error: any) {
+            console.error('[AuthContext] Failed to fetch user data:', error);
+            
+            // Extract status from error - check multiple places
+            let status = null;
+            if (error?.status !== undefined) {
+              status = error.status;
+            } else if (error?.response?.status !== undefined) {
+              status = error.response.status;
+            } else if (error?.message) {
+              // Check if error message contains status code
+              const statusMatch = error.message.match(/(\d{3})/);
+              if (statusMatch) {
+                status = parseInt(statusMatch[1]);
+              }
+            }
+            
+            console.error('[AuthContext] Error details:', {
+              message: error instanceof Error ? error.message : String(error),
+              status: status,
+              errorObject: error
+            });
+            
+            // Only clear auth state if the token is actually invalid (401/403)
+            if (status === 401 || status === 403) {
+              console.debug('[AuthContext] Token invalid (401/403), clearing auth state');
+              if (isMounted) {
+                setUser(null);
+                apiClient.setToken(null);
+                localStorage.removeItem('access_token');
+              }
+            } else {
+              // Network error etc — don't log user out, just clear UI state
+              console.debug('[AuthContext] Non-auth error, keeping token in localStorage');
+              if (isMounted) {
+                setUser(null); // Clear UI state but keep token
+              }
+            }
+          }
+        } else {
+          console.debug('[AuthContext] No token found, user not authenticated');
+          if (isMounted) {
+            setUser(null);
+          }
+        }
+      } catch (error) {
+        console.error('[AuthContext] Unexpected error during initialization:', error);
+      } finally {
+        if (isMounted) {
+          console.debug('[AuthContext] Setting loading to false');
+          setLoading(false);
+        }
+      }
+    };
+    
+    initialize();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const login = async (credentials: LoginRequest) => {
     const response = await authAPI.login(credentials);
