@@ -3,23 +3,27 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { ChevronRight, AlertCircle, Loader2 } from 'lucide-react';
+import { ChevronRight, AlertCircle, Loader2, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/lib/context/auth-context';
-import { authAPI } from '@/lib/api';
+import { authAPI, paymentsAPI } from '@/lib/api';
+import { useRazorpayCheckout } from '@/lib/hooks/use-razorpay-checkout';
 import { toast } from 'sonner';
 
 export default function RegisterProfessionalPage() {
   const router = useRouter();
   const { register } = useAuth();
-  const [step, setStep] = useState<'profession' | 'details' | 'credentials'>(
+  const { openCheckout } = useRazorpayCheckout();
+  const [step, setStep] = useState<'profession' | 'details' | 'credentials' | 'payment'>(
     'profession'
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string>('');
   const [profession, setProfession] = useState<string>('');
+  const [upiId, setUpiId] = useState<string>('');
+  const [registrationComplete, setRegistrationComplete] = useState(false);
 
   const [formData, setFormData] = useState({
     email: '',
@@ -127,12 +131,9 @@ export default function RegisterProfessionalPage() {
         role: 'PROFESSIONAL',
       });
 
-      toast.success('Account created! Redirecting to profile creation...');
-
-      // Redirect to profile creation for professionals
-      setTimeout(() => {
-        router.push('/profile/professional/create');
-      }, 1500);
+      toast.success('Account created! Proceeding to payment...');
+      // Move to payment step instead of redirecting immediately
+      setStep('payment');
     } catch (err) {
       const message =
         err instanceof Error ? err.message : 'Failed to create account';
@@ -159,6 +160,86 @@ export default function RegisterProfessionalPage() {
       const message = 'Failed to initiate Google signup';
       setError(message);
       toast.error(message);
+      setLoading(false);
+    }
+  };
+
+  const handlePayment = async () => {
+    if (!upiId.trim()) {
+      setError('Please enter your UPI ID');
+      return;
+    }
+
+    // Validate UPI ID format (simple validation)
+    const upiRegex = /^[a-zA-Z0-9._-]+@[a-zA-Z0-9]+$/;
+    if (!upiRegex.test(upiId)) {
+      setError('Please enter a valid UPI ID (e.g., yourname@upi)');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      // Create consultant registration order
+      const response = await paymentsAPI.createConsultantRegistrationOrder({
+        upi_id: upiId,
+      });
+
+      const razorpayKey = process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+      if (!razorpayKey) {
+        toast.error('Razorpay configuration missing');
+        return;
+      }
+
+      // Open Razorpay checkout for ₹1
+      await openCheckout({
+        key_id: razorpayKey,
+        order_id: response.order_id,
+        amount: 100, // ₹1 = 100 paise
+        currency: 'INR',
+        customer_email: formData.email,
+        notes: {
+          upi_id: upiId,
+          profession_type: formData.profession_type,
+        },
+        prefill: {
+          name: `${formData.first_name} ${formData.last_name}`,
+          email: formData.email,
+        },
+        onSuccess: async (paymentData) => {
+          try {
+            // Verify payment
+            await paymentsAPI.verifyPayment({
+              razorpay_order_id: paymentData.razorpay_order_id,
+              razorpay_payment_id: paymentData.razorpay_payment_id,
+              razorpay_signature: paymentData.razorpay_signature,
+            });
+
+            setRegistrationComplete(true);
+            toast.success('Registration fee paid! Welcome to CounselMate!');
+            
+            // Redirect to profile creation after successful payment
+            setTimeout(() => {
+              router.push('/profile/professional/create');
+            }, 2000);
+          } catch (error) {
+            console.error('Payment verification failed:', error);
+            toast.error('Payment verification failed. Please contact support.');
+            setError('Payment verification failed. Please try again or contact support.');
+          }
+        },
+        onError: (error) => {
+          console.error('Payment error:', error);
+          toast.error('Payment failed. Please try again.');
+          setError('Payment failed. Please try again.');
+        },
+      });
+    } catch (error) {
+      console.error('Error creating payment order:', error);
+      toast.error('Failed to process payment. Please try again.');
+      setError('Failed to process payment. Please try again.');
+    } finally {
       setLoading(false);
     }
   };
@@ -420,6 +501,146 @@ export default function RegisterProfessionalPage() {
                   </Link>
                 </p>
               </form>
+            </div>
+          )}
+
+          {step === 'payment' && (
+            <div>
+              <button
+                onClick={() => setStep('details')}
+                className="text-slate-600 hover:text-slate-900 text-sm font-medium mb-6"
+              >
+                ← Back
+              </button>
+
+              <h1 className="text-4xl font-serif font-bold text-slate-900 mb-3">
+                Complete Registration
+              </h1>
+              <p className="text-lg text-slate-600 mb-8">
+                Pay ₹1 registration fee and provide your UPI ID for future payouts
+              </p>
+
+              {error && (
+                <div className="p-4 bg-red-50 border border-red-200 rounded-lg flex gap-3 mb-6">
+                  <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                  <p className="text-sm text-red-800">{error}</p>
+                </div>
+              )}
+
+              <div className="space-y-6">
+                {/* UPI ID Input */}
+                <div>
+                  <Label htmlFor="upi_id" className="text-sm font-medium text-slate-700">
+                    UPI ID for Payouts
+                  </Label>
+                  <Input
+                    id="upi_id"
+                    type="text"
+                    placeholder="yourname@upi"
+                    value={upiId}
+                    onChange={(e) => {
+                      setUpiId(e.target.value);
+                      setError('');
+                    }}
+                    disabled={loading || registrationComplete}
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-slate-500 mt-1">
+                    Format: yourname@upi (e.g., john@okhdfcbank)
+                  </p>
+                </div>
+
+                {/* Payment Summary */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex gap-3">
+                    <Info className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+                    <div className="text-sm text-blue-900">
+                      <p className="font-semibold mb-1">Registration Fee: ₹1</p>
+                      <ul className="space-y-1 text-xs">
+                        <li>• One-time fee for consultant registration</li>
+                        <li>• Access to client network and bookings</li>
+                        <li>• Service listing on platform</li>
+                        <li>• 95% payout for each consultation</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Payment Method */}
+                <div className="border border-slate-300 rounded-lg p-4">
+                  <h3 className="font-semibold text-slate-900 mb-3">Payment Method</h3>
+                  <div className="flex items-center gap-2 p-3 border border-blue-400 rounded-lg bg-blue-50">
+                    <input
+                      type="radio"
+                      id="razorpay"
+                      name="payment"
+                      checked
+                      readOnly
+                      className="w-4 h-4"
+                    />
+                    <label htmlFor="razorpay" className="flex-1 text-sm font-semibold cursor-pointer">
+                      Razorpay (All payment methods: Card, UPI, Net Banking, Wallet)
+                    </label>
+                  </div>
+                </div>
+
+                {/* Security Info */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 flex gap-2 text-sm">
+                  <span className="text-green-600 font-semibold">✓</span>
+                  <span className="text-green-800">Your payment is secure and encrypted with Razorpay</span>
+                </div>
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <Button
+                    type="button"
+                    onClick={() => setStep('details')}
+                    disabled={loading || registrationComplete}
+                    variant="outline"
+                    className="flex-1 h-11 border-slate-300 text-slate-700 font-semibold rounded-lg hover:bg-slate-50"
+                  >
+                    Back
+                  </Button>
+                  <Button
+                    type="button"
+                    onClick={handlePayment}
+                    disabled={loading || registrationComplete}
+                    className="flex-1 h-11 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg"
+                  >
+                    {loading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : registrationComplete ? (
+                      <>
+                        <span className="text-green-300 mr-2">✓</span>
+                        Payment Complete
+                      </>
+                    ) : (
+                      'Pay ₹1'
+                    )}
+                  </Button>
+                </div>
+
+                <p className="text-center text-xs text-slate-600">
+                  By proceeding, you agree to our{' '}
+                  <Link
+                    href="/terms"
+                    className="font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Terms of Service
+                  </Link>
+                  {' '}and{' '}
+                  <Link
+                    href="/privacy"
+                    className="font-semibold text-blue-600 hover:text-blue-700"
+                  >
+                    Privacy Policy
+                  </Link>
+                  .
+                </p>
+              </div>
             </div>
           )}
         </div>
