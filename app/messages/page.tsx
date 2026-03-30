@@ -85,6 +85,7 @@ export default function MessagesPage() {
   const [loadingBookings, setLoadingBookings] = useState(false)
   const [selected, setSelected] = useState<Booking | null>(null)
   const [selectedContactMessage, setSelectedContactMessage] = useState<ProfileContactMessage | null>(null)
+  const [respondingContactMessageId, setRespondingContactMessageId] = useState<string | null>(null)
 
   const [messages, setMessages] = useState<WSStoredMessage[]>([])
   const [messageInput, setMessageInput] = useState("")
@@ -243,14 +244,52 @@ export default function MessagesPage() {
     }
   }, [consultantQuery, isAuthenticated, isProfessional, selected, user])
 
+  const openAcceptedConversation = useCallback(async (message: ProfileContactMessage) => {
+  if (!message.booking_id) {
+    toast.error("No conversation thread is linked to this request yet")
+    return
+  }
+
+  let targetBooking = bookings.find((b) => b.id === message.booking_id)
+
+  if (!targetBooking && user) {
+    const data = isProfessional
+      ? await bookingsAPI.getConsultantBookings(1, 50)
+      : await bookingsAPI.getMyBookings(1, 50)
+
+    const fetchedBookings = (data.bookings || []).filter((b) => {
+      if (b.user_id === b.consultant_id) return false
+      if (isProfessional) return b.consultant_id === user.id
+      return b.user_id === user.id
+    })
+
+    setBookings(fetchedBookings)
+    targetBooking = fetchedBookings.find((b) => b.id === message.booking_id)
+  }
+
+  if (!targetBooking) {
+    toast.error("Conversation booking not found yet. Please refresh and try again.")
+    return
+  }
+
+  setSelectedContactMessage(null)
+  setSelected(targetBooking)
+  }, [bookings, isProfessional, user])
+
   const respondContactMessage = async (messageId: string, accept: boolean) => {
+  setRespondingContactMessageId(messageId)
     try {
       const res = await profilesAPI.respondContactMessage(messageId, accept)
       setContactMessages((prev) => prev.map((m) => (m.id === messageId ? res.contact_message : m)))
       setSelectedContactMessage((prev) => (prev && prev.id === messageId ? res.contact_message : prev))
+    if (accept && res.contact_message.booking_id) {
+    await openAcceptedConversation(res.contact_message)
+    }
       toast.success(accept ? "Request accepted" : "Request denied")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to respond to request")
+  } finally {
+    setRespondingContactMessageId(null)
     }
   }
 
@@ -308,6 +347,35 @@ export default function MessagesPage() {
       })
     })
   }, [contactMessages, isProfessional, senderUsers])
+
+  useEffect(() => {
+  if (!visibleBookings.length) return
+
+  const counterpartIDs = Array.from(
+    new Set(visibleBookings.map((b) => (isProfessional ? b.user_id : b.consultant_id))),
+  )
+  const missingIDs = counterpartIDs.filter((id) => !senderUsers[id])
+  if (missingIDs.length === 0) return
+
+  Promise.all(
+    missingIDs.map(async (id) => {
+      try {
+        const sender = await usersAPI.getUser(id)
+        return [id, sender] as const
+      } catch {
+        return [id, null] as const
+      }
+    }),
+  ).then((entries) => {
+    setSenderUsers((prev) => {
+      const next = { ...prev }
+      for (const [id, sender] of entries) {
+        if (sender) next[id] = sender
+      }
+      return next
+    })
+  })
+  }, [isProfessional, senderUsers, visibleBookings])
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -563,10 +631,18 @@ export default function MessagesPage() {
 
   const otherPartyLabel = (b: Booking) => {
     if (!isProfessional) {
-      const name = b.consultant ? `${b.consultant.first_name} ${b.consultant.last_name}` : `Consultant ${b.consultant_id.slice(0, 6)}`
+      const counterpart = senderUsers[b.consultant_id]
+      const name = b.consultant
+        ? `${b.consultant.first_name} ${b.consultant.last_name}`
+        : counterpart
+          ? `${counterpart.first_name || ""} ${counterpart.last_name || ""}`.trim() || counterpart.email
+          : `Consultant ${b.consultant_id.slice(0, 6)}`
       return name
     }
-    return `Client ${b.user_id.slice(0, 8)}`
+    const counterpart = senderUsers[b.user_id]
+    return counterpart
+      ? `${counterpart.first_name || ""} ${counterpart.last_name || ""}`.trim() || counterpart.email
+      : `Client ${b.user_id.slice(0, 8)}`
   }
 
   return (
@@ -627,6 +703,7 @@ export default function MessagesPage() {
             {(isProfessional ? incomingRequests : visibleBookings).map((b) => {
               const hs = handshakeByBooking[b.id]
               const status = hs?.status || "NO_REQUEST"
+              const counterpart = senderUsers[isProfessional ? b.user_id : b.consultant_id]
               return (
                 <button
                   key={b.id}
@@ -634,6 +711,7 @@ export default function MessagesPage() {
                   className={`w-full rounded-lg border p-3 text-left ${selected?.id === b.id ? "border-blue-600 bg-blue-50" : "hover:bg-slate-50"}`}
                 >
                   <div className="font-medium">{otherPartyLabel(b)}</div>
+                  {counterpart?.email && <div className="mt-1 text-[11px] text-slate-500">{counterpart.email}</div>}
                   <div className="mt-1 text-xs text-slate-500">Booking #{b.id.slice(0, 8)} • {b.status}</div>
                   {status !== "NO_REQUEST" && <div className="mt-1 text-[11px] font-medium text-slate-600">{status}</div>}
                 </button>
@@ -685,18 +763,30 @@ export default function MessagesPage() {
                 <div className="mt-4 flex gap-2">
                   <button
                     onClick={() => respondContactMessage(selectedContactMessage.id, true)}
+                    disabled={respondingContactMessageId === selectedContactMessage.id}
                     className="rounded-md border px-3 py-2 text-sm"
                   >
                     <Check className="mr-1 inline h-3 w-3" /> Accept
                   </button>
                   <button
                     onClick={() => respondContactMessage(selectedContactMessage.id, false)}
+                    disabled={respondingContactMessageId === selectedContactMessage.id}
                     className="rounded-md border px-3 py-2 text-sm"
                   >
                     <X className="mr-1 inline h-3 w-3" /> Deny
                   </button>
                 </div>
               )}
+              {selectedContactMessage.status === "ACCEPTED" && selectedContactMessage.booking_id && (
+				<div className="mt-4">
+				  <button
+					onClick={() => openAcceptedConversation(selectedContactMessage)}
+					className="rounded-md border px-3 py-2 text-sm"
+				  >
+					Open chat & calls
+				  </button>
+				</div>
+			  )}
             </div>
           ) : !selected ? (
             <div className="p-6 text-slate-500">Select a conversation to start.</div>
