@@ -4,8 +4,6 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
   Calendar,
-  MapPin,
-  User,
   Clock,
   MessageSquare,
   CheckCircle,
@@ -18,6 +16,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { bookingsAPI, type Booking } from "@/lib/api/bookings"
 import { useToast } from "@/hooks/use-toast"
+import { useAuth } from "@/lib/context/auth-context"
 
 export default function BookingHistoryPage() {
   const [bookings, setBookings] = useState<Booking[]>([])
@@ -26,12 +25,15 @@ export default function BookingHistoryPage() {
   const [searchTerm, setSearchTerm] = useState("")
   const [filterStatus, setFilterStatus] = useState<string>("ALL")
   const { toast } = useToast()
+  const { user } = useAuth()
 
   useEffect(() => {
     const loadBookings = async () => {
       try {
         setLoading(true)
-        const result = await bookingsAPI.getMyBookings(1, 50)
+        const result = user?.role === "PROFESSIONAL"
+          ? await bookingsAPI.getConsultantBookings(1, 50)
+          : await bookingsAPI.getMyBookings(1, 50)
         setBookings(result.bookings || [])
       } catch (err) {
         console.error("Error loading bookings:", err)
@@ -47,7 +49,7 @@ export default function BookingHistoryPage() {
     }
 
     loadBookings()
-  }, [toast])
+  }, [toast, user?.role])
 
   const filteredBookings = bookings.filter((booking) => {
     const matchesSearch =

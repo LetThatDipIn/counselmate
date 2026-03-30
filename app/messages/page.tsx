@@ -3,9 +3,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { useAuth } from "@/lib/context/auth-context"
-import { bookingsAPI, paymentsAPI } from "@/lib/api"
+import { bookingsAPI, paymentsAPI, profilesAPI, usersAPI } from "@/lib/api"
 import { realtimeAPI, type FeeRequest, type HandshakeAgreement, type WSStoredMessage } from "@/lib/api/realtime"
 import type { Booking } from "@/lib/api/bookings"
+import type { ProfileContactMessage } from "@/lib/api/profiles"
+import type { User } from "@/lib/api/types"
 import { Send, Phone, Video, Mic, MicOff, VideoOff, MessageSquare, IndianRupee, Check, X, Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
@@ -54,14 +56,35 @@ type RazorpayCtor = new (options: RazorpayCheckoutOptions) => { open: () => void
 
 const getRazorpayWindow = () => window as Window & { Razorpay?: RazorpayCtor }
 
+const formatRelativeTime = (iso: string) => {
+  const then = new Date(iso).getTime()
+  const now = Date.now()
+  const diffSec = Math.max(0, Math.floor((now - then) / 1000))
+
+  if (diffSec < 60) return "just now"
+  if (diffSec < 3600) return `${Math.floor(diffSec / 60)}m ago`
+  if (diffSec < 86400) return `${Math.floor(diffSec / 3600)}h ago`
+  if (diffSec < 604800) return `${Math.floor(diffSec / 86400)}d ago`
+  return new Date(iso).toLocaleDateString()
+}
+
+const contactStatusBadgeClasses: Record<ProfileContactMessage["status"], string> = {
+  PENDING: "border-amber-200 bg-amber-50 text-amber-700",
+  ACCEPTED: "border-emerald-200 bg-emerald-50 text-emerald-700",
+  REJECTED: "border-rose-200 bg-rose-50 text-rose-700",
+}
+
 export default function MessagesPage() {
   const { user, isAuthenticated } = useAuth()
   const searchParams = useSearchParams()
   const consultantQuery = searchParams.get("consultant")
 
   const [bookings, setBookings] = useState<Booking[]>([])
+  const [contactMessages, setContactMessages] = useState<ProfileContactMessage[]>([])
+  const [senderUsers, setSenderUsers] = useState<Record<string, User>>({})
   const [loadingBookings, setLoadingBookings] = useState(false)
   const [selected, setSelected] = useState<Booking | null>(null)
+  const [selectedContactMessage, setSelectedContactMessage] = useState<ProfileContactMessage | null>(null)
 
   const [messages, setMessages] = useState<WSStoredMessage[]>([])
   const [messageInput, setMessageInput] = useState("")
@@ -120,6 +143,20 @@ export default function MessagesPage() {
     })
   }, [handshakeByBooking, user, visibleBookings])
 
+  const sortedContactMessages = useMemo(() => {
+    const statusWeight: Record<ProfileContactMessage["status"], number> = {
+      PENDING: 0,
+      ACCEPTED: 1,
+      REJECTED: 2,
+    }
+
+    return [...contactMessages].sort((a, b) => {
+      const statusDelta = statusWeight[a.status] - statusWeight[b.status]
+      if (statusDelta !== 0) return statusDelta
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    })
+  }, [contactMessages])
+
   const counterpartId = useMemo(() => {
     if (!selected || !user) return ""
     return isProfessional ? selected.user_id : selected.consultant_id
@@ -157,6 +194,11 @@ export default function MessagesPage() {
       const data = isProfessional
         ? await bookingsAPI.getConsultantBookings(1, 50)
         : await bookingsAPI.getMyBookings(1, 50)
+
+      if (isProfessional) {
+        const contactData = await profilesAPI.listContactMessages()
+        setContactMessages(contactData.messages || [])
+      }
 
       const fetchedBookings = (data.bookings || []).filter((b) => {
         // Never allow self-thread rows.
@@ -201,6 +243,17 @@ export default function MessagesPage() {
     }
   }, [consultantQuery, isAuthenticated, isProfessional, selected, user])
 
+  const respondContactMessage = async (messageId: string, accept: boolean) => {
+    try {
+      const res = await profilesAPI.respondContactMessage(messageId, accept)
+      setContactMessages((prev) => prev.map((m) => (m.id === messageId ? res.contact_message : m)))
+      setSelectedContactMessage((prev) => (prev && prev.id === messageId ? res.contact_message : prev))
+      toast.success(accept ? "Request accepted" : "Request denied")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to respond to request")
+    }
+  }
+
   const loadThreadData = useCallback(async (booking: Booking) => {
     setChatLoading(true)
     try {
@@ -228,6 +281,33 @@ export default function MessagesPage() {
     if (!selected) return
     loadThreadData(selected)
   }, [loadThreadData, selected])
+
+  useEffect(() => {
+    if (!isProfessional || contactMessages.length === 0) return
+
+    const uniqueSenderIDs = Array.from(new Set(contactMessages.map((m) => m.sender_user_id)))
+    const missingSenderIDs = uniqueSenderIDs.filter((id) => !senderUsers[id])
+    if (missingSenderIDs.length === 0) return
+
+    Promise.all(
+      missingSenderIDs.map(async (id) => {
+        try {
+          const sender = await usersAPI.getUser(id)
+          return [id, sender] as const
+        } catch {
+          return [id, null] as const
+        }
+      }),
+    ).then((entries) => {
+      setSenderUsers((prev) => {
+        const next = { ...prev }
+        for (const [id, sender] of entries) {
+          if (sender) next[id] = sender
+        }
+        return next
+      })
+    })
+  }, [contactMessages, isProfessional, senderUsers])
 
   useEffect(() => {
     chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
@@ -502,6 +582,48 @@ export default function MessagesPage() {
             <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Incoming requests</div>
           )}
           <div className="space-y-2">
+            {isProfessional && sortedContactMessages.length > 0 && (
+              <>
+                {sortedContactMessages.map((m) => (
+                  (() => {
+                    const sender = senderUsers[m.sender_user_id]
+                    const senderName = sender
+                      ? `${sender.first_name || ""} ${sender.last_name || ""}`.trim() || sender.email
+                      : `User ${m.sender_user_id.slice(0, 8)}`
+                    return (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setSelectedContactMessage(m)
+                      setSelected(null)
+                    }}
+                    className={`w-full rounded-lg border p-3 text-left ${selectedContactMessage?.id === m.id ? "border-blue-600 bg-blue-50" : "hover:bg-slate-50"}`}
+                  >
+                    <div className="mb-1 flex items-center gap-2">
+                      {sender?.profile_picture && (
+                        <img src={sender.profile_picture} alt={senderName} className="h-6 w-6 rounded-full object-cover" />
+                      )}
+                      <div className="min-w-0">
+                        <div className="truncate text-xs font-semibold text-slate-800">{senderName}</div>
+                        {sender?.email && <div className="truncate text-[11px] text-slate-500">{sender.email}</div>}
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="font-medium">{m.subject}</div>
+                      <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${contactStatusBadgeClasses[m.status]}`}>
+                        {m.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-xs text-slate-500">{m.message.slice(0, 120)}{m.message.length > 120 ? "…" : ""}</div>
+                    <div className="mt-1 text-[11px] text-slate-500">{formatRelativeTime(m.created_at)}</div>
+                  </button>
+                    )
+                  })()
+                ))}
+                <div className="my-2 border-t" />
+              </>
+            )}
+
             {(isProfessional ? incomingRequests : visibleBookings).map((b) => {
               const hs = handshakeByBooking[b.id]
               const status = hs?.status || "NO_REQUEST"
@@ -513,16 +635,14 @@ export default function MessagesPage() {
                 >
                   <div className="font-medium">{otherPartyLabel(b)}</div>
                   <div className="mt-1 text-xs text-slate-500">Booking #{b.id.slice(0, 8)} • {b.status}</div>
-                  <div className="mt-1 text-[11px] font-medium text-slate-600">
-                    {status === "ACTIVE" ? "Conversation active" : status === "PENDING" ? "Request pending" : "No request yet"}
-                  </div>
+                  {status !== "NO_REQUEST" && <div className="mt-1 text-[11px] font-medium text-slate-600">{status}</div>}
                 </button>
               )
             })}
             {isProfessional && pendingSentRequests.length > 0 && (
               <div className="pt-2 text-xs text-slate-500">{pendingSentRequests.length} request(s) awaiting user response.</div>
             )}
-            {!visibleBookings.length && !loadingBookings && <div className="text-sm text-slate-500">No conversations yet.</div>}
+            {!visibleBookings.length && !contactMessages.length && !loadingBookings && <div className="text-sm text-slate-500">No real messages yet.</div>}
             {isProfessional && visibleBookings.length > 0 && incomingRequests.length === 0 && (
               <div className="text-sm text-slate-500">No incoming requests right now.</div>
             )}
@@ -536,7 +656,49 @@ export default function MessagesPage() {
         </div>
 
         <div className="rounded-xl border bg-white">
-          {!selected ? (
+          {selectedContactMessage ? (
+            <div className="p-6">
+              {(() => {
+                const sender = senderUsers[selectedContactMessage.sender_user_id]
+                const senderName = sender
+                  ? `${sender.first_name || ""} ${sender.last_name || ""}`.trim() || sender.email
+                  : `User ${selectedContactMessage.sender_user_id.slice(0, 8)}`
+                return (
+                  <div className="mb-3 flex items-center gap-3 rounded-lg border bg-slate-50 p-3">
+                    {sender?.profile_picture && <img src={sender.profile_picture} alt={senderName} className="h-10 w-10 rounded-full object-cover" />}
+                    <div>
+                      <div className="text-sm font-semibold text-slate-800">{senderName}</div>
+                      {sender?.email && <div className="text-xs text-slate-500">{sender.email}</div>}
+                    </div>
+                  </div>
+                )
+              })()}
+              <h3 className="text-lg font-semibold">{selectedContactMessage.subject}</h3>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-slate-700">{selectedContactMessage.message}</p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className={`rounded-full border px-2 py-0.5 text-[10px] font-semibold ${contactStatusBadgeClasses[selectedContactMessage.status]}`}>
+                  {selectedContactMessage.status}
+                </span>
+                <span className="text-xs text-slate-500">{formatRelativeTime(selectedContactMessage.created_at)}</span>
+              </div>
+              {isProfessional && selectedContactMessage.status === "PENDING" && (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    onClick={() => respondContactMessage(selectedContactMessage.id, true)}
+                    className="rounded-md border px-3 py-2 text-sm"
+                  >
+                    <Check className="mr-1 inline h-3 w-3" /> Accept
+                  </button>
+                  <button
+                    onClick={() => respondContactMessage(selectedContactMessage.id, false)}
+                    className="rounded-md border px-3 py-2 text-sm"
+                  >
+                    <X className="mr-1 inline h-3 w-3" /> Deny
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : !selected ? (
             <div className="p-6 text-slate-500">Select a conversation to start.</div>
           ) : (
             <>
