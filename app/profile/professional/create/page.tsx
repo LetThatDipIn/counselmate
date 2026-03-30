@@ -11,8 +11,8 @@ import { Textarea } from "@/components/ui/textarea"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast } from "sonner"
 import { Loader2, ArrowLeft, Check, X } from "lucide-react"
-import { PROFESSION_SKILLS, CERTIFICATIONS, LANGUAGES, PROFESSION_TITLES } from "@/lib/professional-data"
-import type { UpdateProfileRequest } from "@/lib/api/types"
+import { PROFESSION_SKILLS, CERTIFICATIONS, LANGUAGES } from "@/lib/professional-data"
+import type { ProfessionType, UpdateProfileRequest } from "@/lib/api/types"
 
 export default function CreateProfessionalProfilePage() {
   const { user, isAuthenticated, loading } = useAuth()
@@ -20,7 +20,7 @@ export default function CreateProfessionalProfilePage() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [step, setStep] = useState(1)
   const [formData, setFormData] = useState<UpdateProfileRequest>({
-    profession_type: 'CA',
+    profession_type: 'POWER_OF_ATTORNEY',
     title: '',
     bio: '',
     skills: [],
@@ -55,10 +55,9 @@ export default function CreateProfessionalProfilePage() {
 
   if (!user || user.role !== 'PROFESSIONAL') return null
 
-  const professionType = (formData.profession_type || 'CA') as keyof typeof PROFESSION_SKILLS
+  const professionType = (formData.profession_type || 'POWER_OF_ATTORNEY') as keyof typeof PROFESSION_SKILLS
   const availableSkills = PROFESSION_SKILLS[professionType] || []
   const availableCerts = CERTIFICATIONS[professionType] || []
-  const availableTitles = PROFESSION_TITLES[professionType] || []
 
   const handleAddSkill = (skill: string) => {
     if (!formData.skills?.includes(skill)) {
@@ -204,18 +203,18 @@ export default function CreateProfessionalProfilePage() {
               <div>
                 <Label>Profession Type</Label>
                 <Select
-                  value={formData.profession_type || 'CA'}
+                  value={formData.profession_type || 'POWER_OF_ATTORNEY'}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, profession_type: value as any })
+                    setFormData({ ...formData, profession_type: value as ProfessionType })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CA">Chartered Accountant</SelectItem>
-                    <SelectItem value="CONSULTANT">Business Consultant</SelectItem>
-                    <SelectItem value="LAWYER">Lawyer</SelectItem>
+                    <SelectItem value="POWER_OF_ATTORNEY">Power of Attorney</SelectItem>
+                    <SelectItem value="MARRIAGE_REGISTRATION">Marriage Registration</SelectItem>
+                    <SelectItem value="LEGAL_HEIR_CERTIFICATE">Legal Heir Certificate</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -337,7 +336,7 @@ export default function CreateProfessionalProfilePage() {
                   onValueChange={(value) =>
                     setFormData({
                       ...formData,
-                      availability: value as any,
+                      availability: value,
                     })
                   }
                 >

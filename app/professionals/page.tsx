@@ -15,12 +15,9 @@ import { toast } from "sonner"
 const LIMIT = 12
 
 const getProfessionLabel = (type: string) => ({
-  CA: 'Chartered Accountant',
-  CA_APPRENTICE: 'CA Apprentice',
-  LAWYER: 'Lawyer',
-  ADVOCATE: 'Advocate',
-  LAW_FIRM: 'Law Firm',
-  CA_FIRM: 'CA Firm',
+  POWER_OF_ATTORNEY: 'Power of Attorney',
+  MARRIAGE_REGISTRATION: 'Marriage Registration',
+  LEGAL_HEIR_CERTIFICATE: 'Legal Heir Certificate',
 }[type] ?? type)
 
 const availColor = (a: string) => {
@@ -118,7 +115,7 @@ export default function ProfessionalsPage() {
                 Find your <em>expert</em>
               </h1>
               <p className="pros-sub">
-                Browse verified CAs, Lawyers, and Advocates — filtered by expertise, location, and availability.
+                Browse verified professionals for Power of Attorney, Marriage Registration, and Legal Heir Certificate.
               </p>
             </div>
             {!loading && total > 0 && (

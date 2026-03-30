@@ -3,75 +3,53 @@
  */
 
 export const PROFESSION_SKILLS = {
-  CA: [
-    'GST Compliance',
-    'Income Tax',
-    'Audit',
-    'Financial Planning',
-    'Bookkeeping',
-    'Tax Filing',
-    'FEMA',
-    'Business Valuation',
-    'Cost Accounting',
-    'Company Accounts',
-    'Treasury',
-    'Indirect Tax',
+  POWER_OF_ATTORNEY: [
+    'General Power Drafting',
+    'Special Power Drafting',
+    'Notarization Guidance',
+    'Registration Support',
+    'Property Representation',
+    'NRI Power of Attorney',
+    'Apostille Guidance',
+    'Revocation Support',
   ],
-  CONSULTANT: [
-    'Business Strategy',
-    'Market Analysis',
-    'Operations',
-    'Financial Advisory',
-    'Growth Strategy',
-    'Cost Optimization',
-    'Process Improvement',
-    'Digital Transformation',
-    'Organizational Change',
-    'Project Management',
-    'Supply Chain',
-    'Performance Management',
+  MARRIAGE_REGISTRATION: [
+    'Court Marriage Process',
+    'Special Marriage Act',
+    'Hindu Marriage Registration',
+    'Document Verification',
+    'Witness Coordination',
+    'Affidavit Drafting',
+    'Interfaith Marriage Guidance',
+    'Online Appointment Support',
   ],
-  LAWYER: [
-    'Corporate Law',
-    'Contract Review',
-    'Litigation',
-    'Intellectual Property',
-    'Real Estate',
-    'Employment Law',
-    'Startup Law',
-    'Tax Law',
-    'Regulatory Compliance',
+  LEGAL_HEIR_CERTIFICATE: [
+    'Application Drafting',
+    'Succession Documentation',
+    'Revenue Office Filing',
+    'Affidavit & Indemnity',
+    'Notice & Publication',
+    'Objection Handling',
+    'State-wise Procedure Support',
+    'Follow-up & Tracking',
   ],
 };
 
 export const CERTIFICATIONS = {
-  CA: [
-    'CA (Chartered Accountant)',
-    'ACA (Associate Chartered Accountant)',
-    'CPA (Certified Public Accountant)',
-    'CIA (Certified Internal Auditor)',
-    'CISA (Certified Information Systems Auditor)',
-    'CFE (Certified Fraud Examiner)',
-    'CFA (Chartered Financial Analyst)',
+  POWER_OF_ATTORNEY: [
+    'Advocate Enrollment',
+    'Notary Public',
+    'Drafting & Conveyancing Certification',
   ],
-  CONSULTANT: [
-    'MBA',
-    'Executive Education',
-    'PRINCE2',
-    'PMP',
-    'SIX SIGMA',
-    'LEAN',
-    'ITIL',
-    'SAP Certification',
-    'Industry-Specific Certifications',
+  MARRIAGE_REGISTRATION: [
+    'Advocate Enrollment',
+    'Family Law Certification',
+    'Marriage Law Practice Certification',
   ],
-  LAWYER: [
-    'LLB',
-    'LLM',
-    'Bar Council Registration',
-    'High Court Admission',
-    'Notary',
-    'Company Secretary',
+  LEGAL_HEIR_CERTIFICATE: [
+    'Advocate Enrollment',
+    'Succession Law Certification',
+    'Revenue Procedure Certification',
   ],
 };
 
@@ -92,27 +70,19 @@ export const LANGUAGES = [
 ];
 
 export const PROFESSION_TITLES = {
-  CA: [
-    'Chartered Accountant',
-    'CA - Tax Specialist',
-    'CA - Audit Specialist',
-    'CA - GST Specialist',
-    'CA - Financial Advisor',
-    'CA - Cost Accountant',
+  POWER_OF_ATTORNEY: [
+    'Power of Attorney Specialist',
+    'POA Documentation Expert',
+    'POA Registration Consultant',
   ],
-  CONSULTANT: [
-    'Business Consultant',
-    'Management Consultant',
-    'Strategy Consultant',
-    'Financial Consultant',
-    'Operations Consultant',
-    'Digital Transformation Consultant',
+  MARRIAGE_REGISTRATION: [
+    'Marriage Registration Specialist',
+    'Court Marriage Consultant',
+    'Marriage Documentation Expert',
   ],
-  LAWYER: [
-    'Advocate',
-    'Lawyer',
-    'Corporate Lawyer',
-    'Tax Lawyer',
-    'IP Lawyer',
+  LEGAL_HEIR_CERTIFICATE: [
+    'Legal Heir Certificate Specialist',
+    'Succession Documentation Consultant',
+    'Heirship Certificate Expert',
   ],
 };
