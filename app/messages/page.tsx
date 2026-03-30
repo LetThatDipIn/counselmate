@@ -32,6 +32,28 @@ interface WSMessage {
   timestamp?: string
 }
 
+type RazorpayCheckoutOptions = {
+  key: string
+  amount: number
+  currency: string
+  name: string
+  description: string
+  order_id: string
+  handler: () => void
+  theme?: { color?: string }
+}
+
+type RazorpayPaymentOrder = {
+  razorpay_key_id: string
+  order_id: string
+  amount: number
+  currency?: string
+}
+
+type RazorpayCtor = new (options: RazorpayCheckoutOptions) => { open: () => void }
+
+const getRazorpayWindow = () => window as Window & { Razorpay?: RazorpayCtor }
+
 export default function MessagesPage() {
   const { user, isAuthenticated } = useAuth()
   const searchParams = useSearchParams()
@@ -46,6 +68,7 @@ export default function MessagesPage() {
   const [chatLoading, setChatLoading] = useState(false)
 
   const [handshake, setHandshake] = useState<HandshakeAgreement | null>(null)
+  const [handshakeByBooking, setHandshakeByBooking] = useState<Record<string, HandshakeAgreement | null>>({})
   const [termsOpen, setTermsOpen] = useState(false)
   const [termsAccepted, setTermsAccepted] = useState(false)
 
@@ -56,7 +79,7 @@ export default function MessagesPage() {
 
   const [callOpen, setCallOpen] = useState(false)
   const [chatPaneInCall, setChatPaneInCall] = useState(true)
-  const [inCall, setInCall] = useState(false)
+  const [, setInCall] = useState(false)
   const [muted, setMuted] = useState(false)
   const [cameraOff, setCameraOff] = useState(false)
 
@@ -68,6 +91,34 @@ export default function MessagesPage() {
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
   const isProfessional = user?.role === "PROFESSIONAL"
+
+  const visibleBookings = useMemo(() => {
+    if (!user) return []
+    return bookings.filter((b) => {
+      if (b.user_id === b.consultant_id) return false
+      return b.user_id === user.id || b.consultant_id === user.id
+    })
+  }, [bookings, user])
+
+  const incomingRequests = useMemo(() => {
+    if (!user) return []
+    return visibleBookings.filter((b) => {
+      const hs = handshakeByBooking[b.id]
+      return hs?.status === "PENDING" && hs.responder_id === user.id
+    })
+  }, [handshakeByBooking, user, visibleBookings])
+
+  const activeConversations = useMemo(() => {
+    return visibleBookings.filter((b) => handshakeByBooking[b.id]?.status === "ACTIVE")
+  }, [handshakeByBooking, visibleBookings])
+
+  const pendingSentRequests = useMemo(() => {
+    if (!user) return []
+    return visibleBookings.filter((b) => {
+      const hs = handshakeByBooking[b.id]
+      return hs?.status === "PENDING" && hs.requester_id === user.id
+    })
+  }, [handshakeByBooking, user, visibleBookings])
 
   const counterpartId = useMemo(() => {
     if (!selected || !user) return ""
@@ -106,12 +157,42 @@ export default function MessagesPage() {
       const data = isProfessional
         ? await bookingsAPI.getConsultantBookings(1, 50)
         : await bookingsAPI.getMyBookings(1, 50)
-      setBookings(data.bookings || [])
-      if (!selected && data.bookings?.length) {
+
+      const fetchedBookings = (data.bookings || []).filter((b) => {
+        // Never allow self-thread rows.
+        if (b.user_id === b.consultant_id) return false
+        if (isProfessional) return b.consultant_id === user.id
+        return b.user_id === user.id
+      })
+
+      setBookings(fetchedBookings)
+
+      const handshakeEntries = await Promise.all(
+        fetchedBookings.map(async (b) => {
+          const hs = await realtimeAPI.getHandshakeStatus(b.id)
+          return [b.id, hs] as const
+        }),
+      )
+      const handshakeMap = Object.fromEntries(handshakeEntries)
+      setHandshakeByBooking(handshakeMap)
+
+      if (!selected && fetchedBookings.length) {
+        if (consultantQuery && consultantQuery === user.id) {
+          toast.error("You cannot message yourself")
+        }
+
         const deepLinked = consultantQuery
-          ? data.bookings.find((b) => b.consultant_id === consultantQuery)
+          ? fetchedBookings.find((b) => b.consultant_id === consultantQuery)
           : undefined
-        setSelected(deepLinked || data.bookings[0])
+
+        const firstIncoming = isProfessional
+          ? fetchedBookings.find((b) => {
+              const hs = handshakeMap[b.id]
+              return hs?.status === "PENDING" && hs.responder_id === user.id
+            })
+          : undefined
+
+        setSelected(deepLinked || firstIncoming || fetchedBookings[0])
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load conversations")
@@ -130,6 +211,7 @@ export default function MessagesPage() {
       ])
       setMessages(msgs)
       setHandshake(hs)
+      setHandshakeByBooking((prev) => ({ ...prev, [booking.id]: hs }))
       setFeeRequests(fees)
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to load thread")
@@ -261,7 +343,7 @@ export default function MessagesPage() {
         sdp_offer: JSON.stringify(offer),
       })
       setInCall(true)
-    } catch (e) {
+    } catch {
       toast.error("Failed to start call")
     }
   }
@@ -308,6 +390,10 @@ export default function MessagesPage() {
 
   const requestHandshake = async () => {
     if (!selected) return
+    if (isProfessional) {
+      toast.error("Professionals can only accept or deny incoming requests")
+      return
+    }
     if (!termsAccepted) {
       toast.error("Please agree to terms first")
       return
@@ -315,8 +401,9 @@ export default function MessagesPage() {
     try {
       const hs = await realtimeAPI.requestHandshake(selected.id, "v1")
       setHandshake(hs)
+      setHandshakeByBooking((prev) => ({ ...prev, [selected.id]: hs }))
       setTermsOpen(false)
-      toast.success("Handshake request sent")
+      toast.success("Message request sent")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to send handshake")
     }
@@ -327,7 +414,8 @@ export default function MessagesPage() {
     try {
       const hs = await realtimeAPI.respondHandshake(selected.id, accept)
       setHandshake(hs)
-      toast.success(accept ? "Handshake accepted" : "Handshake rejected")
+      setHandshakeByBooking((prev) => ({ ...prev, [selected.id]: hs }))
+      toast.success(accept ? "Request accepted" : "Request rejected")
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Failed to respond")
     }
@@ -346,7 +434,7 @@ export default function MessagesPage() {
   }
 
   const ensureRazorpayScript = async () => {
-    if ((window as any).Razorpay) return true
+    if (getRazorpayWindow().Razorpay) return true
     await new Promise<void>((resolve, reject) => {
       const s = document.createElement("script")
       s.src = "https://checkout.razorpay.com/v1/checkout.js"
@@ -354,21 +442,22 @@ export default function MessagesPage() {
       s.onerror = () => reject(new Error("Failed to load Razorpay"))
       document.body.appendChild(s)
     })
-    return !!(window as any).Razorpay
+    return !!getRazorpayWindow().Razorpay
   }
 
   const payFeeRequest = async (req: FeeRequest) => {
     if (!selected) return
     try {
       await realtimeAPI.respondFeeRequest(req.id, true)
-      const order: any = await paymentsAPI.createPaymentOrder({
+      const order = await paymentsAPI.createPaymentOrder({
         service_id: selected.service_id,
         consultant_id: selected.consultant_id,
         amount: req.amount_rupees,
-      })
+      }) as RazorpayPaymentOrder
 
       const loaded = await ensureRazorpayScript()
-      if (!loaded || !(window as any).Razorpay) {
+      const win = getRazorpayWindow()
+      if (!loaded || !win.Razorpay) {
         toast.success("Payment order created. Razorpay UI not available in this browser.")
         return
       }
@@ -385,7 +474,7 @@ export default function MessagesPage() {
         },
         theme: { color: "#2563eb" },
       }
-  const razorpay = new (window as any).Razorpay(options)
+  const razorpay = new win.Razorpay(options)
       razorpay.open()
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Payment failed")
@@ -405,22 +494,45 @@ export default function MessagesPage() {
       <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
         <div className="rounded-xl border bg-white p-3">
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">{isProfessional ? "Clients" : "Messages"}</h2>
+            <h2 className="text-lg font-semibold">{isProfessional ? "Message Requests" : "Messages"}</h2>
             {loadingBookings && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
+
+          {isProfessional && (
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Incoming requests</div>
+          )}
           <div className="space-y-2">
-            {bookings.map((b) => (
-              <button
-                key={b.id}
-                onClick={() => setSelected(b)}
-                className={`w-full rounded-lg border p-3 text-left ${selected?.id === b.id ? "border-blue-600 bg-blue-50" : "hover:bg-slate-50"}`}
-              >
-                <div className="font-medium">{otherPartyLabel(b)}</div>
-                <div className="text-xs text-slate-500">Booking #{b.id.slice(0, 8)} • {b.status}</div>
-              </button>
-            ))}
-            {!bookings.length && !loadingBookings && <div className="text-sm text-slate-500">No conversations yet.</div>}
+            {(isProfessional ? incomingRequests : visibleBookings).map((b) => {
+              const hs = handshakeByBooking[b.id]
+              const status = hs?.status || "NO_REQUEST"
+              return (
+                <button
+                  key={b.id}
+                  onClick={() => setSelected(b)}
+                  className={`w-full rounded-lg border p-3 text-left ${selected?.id === b.id ? "border-blue-600 bg-blue-50" : "hover:bg-slate-50"}`}
+                >
+                  <div className="font-medium">{otherPartyLabel(b)}</div>
+                  <div className="mt-1 text-xs text-slate-500">Booking #{b.id.slice(0, 8)} • {b.status}</div>
+                  <div className="mt-1 text-[11px] font-medium text-slate-600">
+                    {status === "ACTIVE" ? "Conversation active" : status === "PENDING" ? "Request pending" : "No request yet"}
+                  </div>
+                </button>
+              )
+            })}
+            {isProfessional && pendingSentRequests.length > 0 && (
+              <div className="pt-2 text-xs text-slate-500">{pendingSentRequests.length} request(s) awaiting user response.</div>
+            )}
+            {!visibleBookings.length && !loadingBookings && <div className="text-sm text-slate-500">No conversations yet.</div>}
+            {isProfessional && visibleBookings.length > 0 && incomingRequests.length === 0 && (
+              <div className="text-sm text-slate-500">No incoming requests right now.</div>
+            )}
           </div>
+
+          {!isProfessional && activeConversations.length > 0 && (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {activeConversations.length} active conversation(s)
+            </div>
+          )}
         </div>
 
         <div className="rounded-xl border bg-white">
@@ -434,8 +546,8 @@ export default function MessagesPage() {
                   <div className="text-xs text-slate-500">Booking #{selected.id.slice(0, 8)}</div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => startCall(false)} className="rounded-md border p-2 hover:bg-slate-50"><Phone className="h-4 w-4" /></button>
-                  <button onClick={() => startCall(true)} className="rounded-md border p-2 hover:bg-slate-50"><Video className="h-4 w-4" /></button>
+                  <button onClick={() => startCall(false)} className="rounded-md border p-2 hover:bg-slate-50" disabled={handshake?.status !== "ACTIVE"}><Phone className="h-4 w-4" /></button>
+                  <button onClick={() => startCall(true)} className="rounded-md border p-2 hover:bg-slate-50" disabled={handshake?.status !== "ACTIVE"}><Video className="h-4 w-4" /></button>
                   {isProfessional && (
                     <button onClick={() => setFeeModalOpen(true)} className="rounded-md border px-3 py-2 text-sm hover:bg-slate-50">Request Payment</button>
                   )}
@@ -470,7 +582,7 @@ export default function MessagesPage() {
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
                       onKeyDown={(e) => e.key === "Enter" && sendChat()}
-                      placeholder={handshake?.status === "ACTIVE" ? "Type a message..." : "Accept terms + handshake to chat"}
+                      placeholder={handshake?.status === "ACTIVE" ? "Type a message..." : isProfessional ? "Accept request to start chat" : "Send request first to start chat"}
                       className="h-11 flex-1 rounded-md border px-3"
                     />
                     <button onClick={sendChat} className="h-11 rounded-md bg-blue-600 px-4 text-white"><Send className="h-4 w-4" /></button>
@@ -479,12 +591,16 @@ export default function MessagesPage() {
 
                 <div className="space-y-3">
                   <div className="rounded-lg border p-3">
-                    <div className="mb-2 text-sm font-semibold">Consent / Handshake</div>
+                    <div className="mb-2 text-sm font-semibold">Message request status</div>
                     {handshake?.status === "ACTIVE" ? (
-                      <div className="text-sm text-green-700">✅ Both parties accepted terms.</div>
+                      <div className="text-sm text-green-700">✅ Request accepted. You can now message and call.</div>
                     ) : handshake?.status === "PENDING" ? (
                       <div className="space-y-2">
-                        <div className="text-sm text-amber-700">Pending acceptance.</div>
+                        <div className="text-sm text-amber-700">
+                          {handshake.responder_id === user?.id
+                            ? "New message request received. Accept or deny below."
+                            : "Your message request is pending acceptance."}
+                        </div>
                         {handshake.responder_id === user?.id && (
                           <div className="flex gap-2">
                             <button onClick={() => respondHandshake(true)} className="rounded-md border px-3 py-1 text-sm"><Check className="mr-1 inline h-3 w-3" />Accept</button>
@@ -493,7 +609,13 @@ export default function MessagesPage() {
                         )}
                       </div>
                     ) : (
-                      <button onClick={() => setTermsOpen(true)} className="rounded-md border px-3 py-2 text-sm">Open terms & start handshake</button>
+                      <button
+                        onClick={() => setTermsOpen(true)}
+                        className="rounded-md border px-3 py-2 text-sm"
+                        disabled={isProfessional}
+                      >
+                        {isProfessional ? "Waiting for user request" : "Open terms & send request"}
+                      </button>
                     )}
                   </div>
 
