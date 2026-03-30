@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { useState, useEffect, useRef } from "react"
+import { contentAPI, type LandingContent } from "@/lib/api"
 import {
   Shield, Star, Users, Clock, FileText,
   ChevronRight, Mail, Phone, MapPin,
@@ -11,6 +12,21 @@ import {
 
 export default function Home() {
   const [activeSection, setActiveSection] = useState("about")
+  const [landingContent, setLandingContent] = useState<LandingContent>({
+    id: 1,
+    hero_headline_line1: "Find Verified",
+    hero_headline_em: "Chartered Accountants",
+    hero_headline_line3: "& Lawyers — Instantly",
+    hero_deck: "CounselMate is India's trusted directory connecting individuals and businesses with verified legal and financial professionals. No middlemen. No hidden costs. Direct access to the expertise you need.",
+    hero_col1_paragraph1: "Whether you need a Chartered Accountant to handle your GST filing, a Corporate Lawyer to review your contracts, or a Tax Specialist to plan your investments — CounselMate puts verified, credentialed professionals at your fingertips.",
+    hero_col1_paragraph2: "Every professional on our platform has been individually verified. We confirm Bar Council registrations, ICAI memberships, and practice credentials before any profile goes live.",
+    hero_col2_paragraph1: "We built CounselMate because finding trustworthy legal and financial help in India has historically meant relying on personal referrals or navigating directories with outdated, unverified listings.",
+    hero_col2_paragraph2: "Our platform changes that. Browse by specialization, location, language, and availability. Read verified client reviews. Book a consultation in minutes.",
+    services_intro: "CounselMate hosts professionals across two primary domains — legal services and financial advisory. Below is a complete overview of what you can find on our platform.",
+    how_it_works_intro: "From your first visit to a completed consultation, the entire process is designed to be clear, secure, and efficient. Here is a step-by-step account of what to expect.",
+    why_us_intro: "There are many ways to find legal and financial help in India. Here is an honest account of what makes CounselMate different, and why thousands of clients trust us.",
+    updated_at: "",
+  })
   const mainRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -24,6 +40,19 @@ export default function Home() {
     }
     window.addEventListener("scroll", handleScroll, { passive: true })
     return () => window.removeEventListener("scroll", handleScroll)
+  }, [])
+
+  useEffect(() => {
+    contentAPI
+      .getLandingContent()
+      .then((res) => {
+        if (res?.content) {
+          setLandingContent((prev) => ({ ...prev, ...res.content }))
+        }
+      })
+      .catch(() => {
+        // keep built-in defaults if remote content is unavailable
+      })
   }, [])
 
   return (
@@ -44,14 +73,12 @@ export default function Home() {
 
             <div className="cm-hero-headline-wrap">
               <h1 className="cm-hero-headline">
-                Find Verified<br />
-                <em>Chartered Accountants</em><br />
-                &amp; Lawyers — Instantly
+                {landingContent.hero_headline_line1}<br />
+                <em>{landingContent.hero_headline_em}</em><br />
+                {landingContent.hero_headline_line3}
               </h1>
               <div className="cm-hero-deck">
-                CounselMate is India's trusted directory connecting individuals and businesses
-                with verified legal and financial professionals. No middlemen. No hidden costs.
-                Direct access to the expertise you need.
+                {landingContent.hero_deck}
               </div>
             </div>
 
@@ -59,27 +86,12 @@ export default function Home() {
               <div className="cm-hero-rule" />
               <div className="cm-hero-columns">
                 <div className="cm-hero-col">
-                  <p>
-                    Whether you need a Chartered Accountant to handle your GST filing, a Corporate
-                    Lawyer to review your contracts, or a Tax Specialist to plan your investments —
-                    CounselMate puts verified, credentialed professionals at your fingertips.
-                  </p>
-                  <p>
-                    Every professional on our platform has been individually verified. We confirm
-                    Bar Council registrations, ICAI memberships, and practice credentials before
-                    any profile goes live.
-                  </p>
+                  <p>{landingContent.hero_col1_paragraph1}</p>
+                  <p>{landingContent.hero_col1_paragraph2}</p>
                 </div>
                 <div className="cm-hero-col">
-                  <p>
-                    We built CounselMate because finding trustworthy legal and financial help in
-                    India has historically meant relying on personal referrals or navigating
-                    directories with outdated, unverified listings.
-                  </p>
-                  <p>
-                    Our platform changes that. Browse by specialization, location, language, and
-                    availability. Read verified client reviews. Book a consultation in minutes.
-                  </p>
+                  <p>{landingContent.hero_col2_paragraph1}</p>
+                  <p>{landingContent.hero_col2_paragraph2}</p>
                 </div>
               </div>
               <div className="cm-hero-rule" />
@@ -110,8 +122,7 @@ export default function Home() {
           </div>
 
           <div className="cm-section-intro">
-            CounselMate hosts professionals across two primary domains — legal services and financial
-            advisory. Below is a complete overview of what you can find on our platform.
+            {landingContent.services_intro}
           </div>
 
           <div className="cm-services-grid">
@@ -153,8 +164,7 @@ export default function Home() {
           </div>
 
           <div className="cm-section-intro dark">
-            From your first visit to a completed consultation, the entire process is designed to
-            be clear, secure, and efficient. Here is a step-by-step account of what to expect.
+            {landingContent.how_it_works_intro}
           </div>
 
           <div className="cm-steps-guide">
@@ -210,8 +220,7 @@ export default function Home() {
           </div>
 
           <div className="cm-section-intro">
-            There are many ways to find legal and financial help in India. Here is an honest
-            account of what makes CounselMate different, and why thousands of clients trust us.
+            {landingContent.why_us_intro}
           </div>
 
           <div className="cm-reasons">
