@@ -25,9 +25,13 @@ export default function Home() {
     services_intro: "CounselMate hosts professionals across two primary domains — legal services and financial advisory. Below is a complete overview of what you can find on our platform.",
     how_it_works_intro: "From your first visit to a completed consultation, the entire process is designed to be clear, secure, and efficient. Here is a step-by-step account of what to expect.",
     why_us_intro: "There are many ways to find legal and financial help in India. Here is an honest account of what makes CounselMate different, and why thousands of clients trust us.",
+    content_map: {},
     updated_at: "",
   })
   const mainRef = useRef<HTMLDivElement>(null)
+
+  const contentMap = landingContent.content_map || {}
+  const t = (key: string, fallback: string) => contentMap[key] || fallback
 
   useEffect(() => {
     const sections = ["about", "services", "how-it-works", "why-us", "contact"]
@@ -64,11 +68,11 @@ export default function Home() {
         <section id="about" className="cm-section cm-hero-section">
           <div className="cm-newspaper-header">
             <div className="cm-edition-bar">
-              <span>Platform Guide</span>
+              <span>{t("edition.platform_guide", "Platform Guide")}</span>
               <span className="cm-edition-sep">·</span>
-              <span>All You Need to Know</span>
+              <span>{t("edition.all_you_need", "All You Need to Know")}</span>
               <span className="cm-edition-sep">·</span>
-              <span>counselmate.in</span>
+              <span>{t("edition.domain", "counselmate.in")}</span>
             </div>
 
             <div className="cm-hero-headline-wrap">
@@ -99,10 +103,22 @@ export default function Home() {
 
             <div className="cm-stat-strip">
               {[
-                { n: "5,000+",  l: "Verified Professionals" },
-                { n: "50,000+", l: "Consultations Completed" },
-                { n: "4.9 / 5", l: "Average Client Rating" },
-                { n: "100%",    l: "Credential Verified" },
+                {
+                  n: t("stats.verified.number", "5,000+"),
+                  l: t("stats.verified.label", "Verified Professionals"),
+                },
+                {
+                  n: t("stats.consults.number", "50,000+"),
+                  l: t("stats.consults.label", "Consultations Completed"),
+                },
+                {
+                  n: t("stats.rating.number", "4.9 / 5"),
+                  l: t("stats.rating.label", "Average Client Rating"),
+                },
+                {
+                  n: t("stats.credential.number", "100%"),
+                  l: t("stats.credential.label", "Credential Verified"),
+                },
               ].map(s => (
                 <div key={s.l} className="cm-stat-strip-item">
                   <div className="cm-stat-strip-num">{s.n}</div>
@@ -117,7 +133,7 @@ export default function Home() {
         <section id="services" className="cm-section">
           <div className="cm-section-header">
             <div className="cm-section-num">§ 01</div>
-            <h2 className="cm-section-title">Our Services</h2>
+            <h2 className="cm-section-title">{t("sections.services.title", "Our Services")}</h2>
             <div className="cm-section-rule" />
           </div>
 
@@ -128,28 +144,28 @@ export default function Home() {
           <div className="cm-services-grid">
             <ServiceBlock
               icon={<Scale size={20} />}
-              title="Legal Services"
+              title={t("services.legal.title", "Legal Services")}
               items={[
-                ["Corporate Law",       "M&A transactions, shareholder agreements, corporate governance, due diligence."],
-                ["Contract Review",     "Drafting, reviewing, and negotiating all forms of commercial and personal contracts."],
-                ["Real Estate Law",     "Property transactions, title verification, lease agreements, development disputes."],
-                ["Labour & Employment", "Employment contracts, termination, compliance with labour statutes."],
-                ["IP & Patents",        "Trademark registration, patent filing, copyright protection, IP enforcement."],
-                ["Startup & Venture",   "Incorporation, ESOP structuring, investor agreements, regulatory compliance."],
-                ["Litigation Support",  "Civil and commercial litigation, arbitration, and dispute resolution."],
+                [t("services.legal.0.name", "Corporate Law"), t("services.legal.0.desc", "M&A transactions, shareholder agreements, corporate governance, due diligence.")],
+                [t("services.legal.1.name", "Contract Review"), t("services.legal.1.desc", "Drafting, reviewing, and negotiating all forms of commercial and personal contracts.")],
+                [t("services.legal.2.name", "Real Estate Law"), t("services.legal.2.desc", "Property transactions, title verification, lease agreements, development disputes.")],
+                [t("services.legal.3.name", "Labour & Employment"), t("services.legal.3.desc", "Employment contracts, termination, compliance with labour statutes.")],
+                [t("services.legal.4.name", "IP & Patents"), t("services.legal.4.desc", "Trademark registration, patent filing, copyright protection, IP enforcement.")],
+                [t("services.legal.5.name", "Startup & Venture"), t("services.legal.5.desc", "Incorporation, ESOP structuring, investor agreements, regulatory compliance.")],
+                [t("services.legal.6.name", "Litigation Support"), t("services.legal.6.desc", "Civil and commercial litigation, arbitration, and dispute resolution.")],
               ]}
             />
             <ServiceBlock
               icon={<Calculator size={20} />}
-              title="Financial & CA Services"
+              title={t("services.financial.title", "Financial & CA Services")}
               items={[
-                ["GST & Indirect Tax",   "Return filing, input tax credit reconciliation, GST audit, registration."],
-                ["Income Tax Advisory",  "Tax planning, ITR filing, scrutiny assessment, appeals and rectification."],
-                ["Company Audit",        "Statutory audit, internal audit, tax audit, limited review engagements."],
-                ["Financial Planning",   "Investment advisory, retirement planning, wealth structuring."],
-                ["FEMA & International", "Foreign exchange compliance, DTAA advisory, overseas investment structuring."],
-                ["Business Valuation",   "Valuation for funding, M&A, ESOPs, and regulatory purposes."],
-                ["Compliance & MCA",     "Company law compliance, MCA filings, annual returns, secretarial services."],
+                [t("services.financial.0.name", "GST & Indirect Tax"), t("services.financial.0.desc", "Return filing, input tax credit reconciliation, GST audit, registration.")],
+                [t("services.financial.1.name", "Income Tax Advisory"), t("services.financial.1.desc", "Tax planning, ITR filing, scrutiny assessment, appeals and rectification.")],
+                [t("services.financial.2.name", "Company Audit"), t("services.financial.2.desc", "Statutory audit, internal audit, tax audit, limited review engagements.")],
+                [t("services.financial.3.name", "Financial Planning"), t("services.financial.3.desc", "Investment advisory, retirement planning, wealth structuring.")],
+                [t("services.financial.4.name", "FEMA & International"), t("services.financial.4.desc", "Foreign exchange compliance, DTAA advisory, overseas investment structuring.")],
+                [t("services.financial.5.name", "Business Valuation"), t("services.financial.5.desc", "Valuation for funding, M&A, ESOPs, and regulatory purposes.")],
+                [t("services.financial.6.name", "Compliance & MCA"), t("services.financial.6.desc", "Company law compliance, MCA filings, annual returns, secretarial services.")],
               ]}
             />
           </div>
@@ -159,7 +175,7 @@ export default function Home() {
         <section id="how-it-works" className="cm-section cm-dark-section">
           <div className="cm-section-header dark">
             <div className="cm-section-num">§ 02</div>
-            <h2 className="cm-section-title">How It Works</h2>
+            <h2 className="cm-section-title">{t("sections.how_it_works.title", "How It Works")}</h2>
             <div className="cm-section-rule dark" />
           </div>
 
@@ -170,29 +186,29 @@ export default function Home() {
           <div className="cm-steps-guide">
             {[
               {
-                n: "Step One",   title: "Create Your Free Account",
-                body: "Register as a Client (Apprentice) or a Professional. Registration is free. You will need a valid email address. Professionals will be prompted to submit credentials for verification after registration.",
-                note: "Takes under 2 minutes.",
+                n: t("steps.0.badge", "Step One"),   title: t("steps.0.title", "Create Your Free Account"),
+                body: t("steps.0.body", "Register as a Client (Apprentice) or a Professional. Registration is free. You will need a valid email address. Professionals will be prompted to submit credentials for verification after registration."),
+                note: t("steps.0.note", "Takes under 2 minutes."),
               },
               {
-                n: "Step Two",   title: "Search the Directory",
-                body: "Use our search to browse verified professionals by specialization, location, language, availability, and hourly rate. Each profile displays full credential information, client reviews, and published rates — no surprises.",
-                note: "All listed professionals are verified.",
+                n: t("steps.1.badge", "Step Two"),   title: t("steps.1.title", "Search the Directory"),
+                body: t("steps.1.body", "Use our search to browse verified professionals by specialization, location, language, availability, and hourly rate. Each profile displays full credential information, client reviews, and published rates — no surprises."),
+                note: t("steps.1.note", "All listed professionals are verified."),
               },
               {
-                n: "Step Three", title: "Review & Select",
-                body: "Read detailed profiles including qualifications, Bar Council or ICAI registration numbers, areas of practice, and verified client reviews. Compare multiple professionals before making a decision.",
-                note: "Reviews are verified — only paying clients can leave them.",
+                n: t("steps.2.badge", "Step Three"), title: t("steps.2.title", "Review & Select"),
+                body: t("steps.2.body", "Read detailed profiles including qualifications, Bar Council or ICAI registration numbers, areas of practice, and verified client reviews. Compare multiple professionals before making a decision."),
+                note: t("steps.2.note", "Reviews are verified — only paying clients can leave them."),
               },
               {
-                n: "Step Four",  title: "Book a Consultation",
-                body: "Select a time slot from the professional's published availability. Confirm your appointment. Payment is handled securely at the time of booking via UPI, card, or net banking.",
-                note: "Cancellation terms are set by each professional.",
+                n: t("steps.3.badge", "Step Four"),  title: t("steps.3.title", "Book a Consultation"),
+                body: t("steps.3.body", "Select a time slot from the professional's published availability. Confirm your appointment. Payment is handled securely at the time of booking via UPI, card, or net banking."),
+                note: t("steps.3.note", "Cancellation terms are set by each professional."),
               },
               {
-                n: "Step Five",  title: "Consult Securely",
-                body: "Connect via our encrypted in-app messaging or video consultation. All communications are private, confidential, and protected. Attorney-client privilege is respected by design.",
-                note: "Your data is never shared or sold.",
+                n: t("steps.4.badge", "Step Five"),  title: t("steps.4.title", "Consult Securely"),
+                body: t("steps.4.body", "Connect via our encrypted in-app messaging or video consultation. All communications are private, confidential, and protected. Attorney-client privilege is respected by design."),
+                note: t("steps.4.note", "Your data is never shared or sold."),
               },
             ].map((step, i) => (
               <div key={i} className="cm-step-row">
@@ -215,7 +231,7 @@ export default function Home() {
         <section id="why-us" className="cm-section">
           <div className="cm-section-header">
             <div className="cm-section-num">§ 03</div>
-            <h2 className="cm-section-title">Why Choose CounselMate</h2>
+            <h2 className="cm-section-title">{t("sections.why_us.title", "Why Choose CounselMate")}</h2>
             <div className="cm-section-rule" />
           </div>
 
@@ -227,33 +243,33 @@ export default function Home() {
             {[
               {
                 icon: <Shield size={18} />,
-                title: "Rigorous Verification",
-                body: "We do not allow self-declaration. Every professional's credentials are manually verified before their profile is published. Bar Council registrations are cross-checked. ICAI memberships are confirmed.",
+                title: t("why.0.title", "Rigorous Verification"),
+                body: t("why.0.body", "We do not allow self-declaration. Every professional's credentials are manually verified before their profile is published. Bar Council registrations are cross-checked. ICAI memberships are confirmed."),
               },
               {
                 icon: <Star size={18} />,
-                title: "Honest, Verified Reviews",
-                body: "Reviews can only be left by clients who completed a paid consultation. No anonymous reviews, paid placement, or review manipulation. What you read is what real clients experienced.",
+                title: t("why.1.title", "Honest, Verified Reviews"),
+                body: t("why.1.body", "Reviews can only be left by clients who completed a paid consultation. No anonymous reviews, paid placement, or review manipulation. What you read is what real clients experienced."),
               },
               {
                 icon: <Clock size={18} />,
-                title: "Transparent Pricing",
-                body: "Every professional publishes their hourly rate. There are no hidden platform fees charged to clients. The rate you see is the rate you pay.",
+                title: t("why.2.title", "Transparent Pricing"),
+                body: t("why.2.body", "Every professional publishes their hourly rate. There are no hidden platform fees charged to clients. The rate you see is the rate you pay."),
               },
               {
                 icon: <FileText size={18} />,
-                title: "No Middlemen",
-                body: "When you book through CounselMate, you are booking directly with the professional. The professional-client relationship is direct, private, and protected by professional privilege laws.",
+                title: t("why.3.title", "No Middlemen"),
+                body: t("why.3.body", "When you book through CounselMate, you are booking directly with the professional. The professional-client relationship is direct, private, and protected by professional privilege laws."),
               },
               {
                 icon: <BookOpen size={18} />,
-                title: "Wide Range of Expertise",
-                body: "Our directory covers the full breadth of legal and financial services — from startup incorporation to property law, from GST compliance to international tax.",
+                title: t("why.4.title", "Wide Range of Expertise"),
+                body: t("why.4.body", "Our directory covers the full breadth of legal and financial services — from startup incorporation to property law, from GST compliance to international tax."),
               },
               {
                 icon: <Users size={18} />,
-                title: "Built for India",
-                body: "CounselMate is built specifically for the Indian legal and financial landscape. Professionals are licensed under Indian law and available in multiple Indian languages.",
+                title: t("why.5.title", "Built for India"),
+                body: t("why.5.body", "CounselMate is built specifically for the Indian legal and financial landscape. Professionals are licensed under Indian law and available in multiple Indian languages."),
               },
             ].map((r, i) => (
               <div key={i} className="cm-reason">
@@ -267,10 +283,9 @@ export default function Home() {
           <div className="cm-pull-quote">
             <div className="cm-pull-quote-rule" />
             <blockquote className="cm-pull-quote-text">
-              "We built CounselMate because every Indian deserves access to qualified,
-              trustworthy legal and financial counsel — not just those with the right connections."
+              {t("why.quote.text", "\"We built CounselMate because every Indian deserves access to qualified, trustworthy legal and financial counsel — not just those with the right connections.\"")}
             </blockquote>
-            <div className="cm-pull-quote-attr">— CounselMate Founders</div>
+            <div className="cm-pull-quote-attr">{t("why.quote.attr", "— CounselMate Founders")}</div>
             <div className="cm-pull-quote-rule" />
           </div>
         </section>
@@ -279,31 +294,28 @@ export default function Home() {
         <section className="cm-section cm-pro-section">
           <div className="cm-section-header">
             <div className="cm-section-num">§ 04</div>
-            <h2 className="cm-section-title">For Professionals</h2>
+            <h2 className="cm-section-title">{t("sections.for_pro.title", "For Professionals")}</h2>
             <div className="cm-section-rule" />
           </div>
           <div className="cm-pro-columns">
             <div className="cm-pro-col-text">
               <p>
-                If you are a Chartered Accountant, Lawyer, Advocate, or run a legal or CA firm,
-                CounselMate offers a direct channel to clients who are actively looking for your expertise.
+                {t("pro.p1", "If you are a Chartered Accountant, Lawyer, Advocate, or run a legal or CA firm, CounselMate offers a direct channel to clients who are actively looking for your expertise.")}
               </p>
               <p>
-                Your profile will display your verified credentials, areas of practice, published rates,
-                and client reviews. You control your availability and set your own consultation rates.
+                {t("pro.p2", "Your profile will display your verified credentials, areas of practice, published rates, and client reviews. You control your availability and set your own consultation rates.")}
               </p>
               <p>
-                There are no referral fees. No commission on consultations. You receive the full
-                amount clients pay for your time.
+                {t("pro.p3", "There are no referral fees. No commission on consultations. You receive the full amount clients pay for your time.")}
               </p>
               <div className="cm-pro-checklist">
                 {[
-                  "Verified badge displayed on your profile",
-                  "Set your own hourly consultation rate",
-                  "Manage your availability calendar",
-                  "Receive encrypted client messages",
-                  "Build a verified review history",
-                  "No commission on consultations",
+                  t("pro.check.0", "Verified badge displayed on your profile"),
+                  t("pro.check.1", "Set your own hourly consultation rate"),
+                  t("pro.check.2", "Manage your availability calendar"),
+                  t("pro.check.3", "Receive encrypted client messages"),
+                  t("pro.check.4", "Build a verified review history"),
+                  t("pro.check.5", "No commission on consultations"),
                 ].map(item => (
                   <div key={item} className="cm-pro-check-item">
                     <ChevronRight size={13} className="cm-pro-check-icon" />
@@ -314,18 +326,17 @@ export default function Home() {
             </div>
             <div className="cm-pro-col-cta">
               <div className="cm-pro-cta-box">
-                <div className="cm-pro-cta-title">Ready to join?</div>
+                <div className="cm-pro-cta-title">{t("pro.cta.title", "Ready to join?")}</div>
                 <div className="cm-pro-cta-body">
-                  Registration is free. After completing your profile, our team will verify
-                  your credentials within 2–3 business days.
+                  {t("pro.cta.body", "Registration is free. After completing your profile, our team will verify your credentials within 2–3 business days.")}
                 </div>
                 <Link href="/auth/register?role=PROFESSIONAL" className="cm-pro-cta-btn">
-                  Register as a Professional
+                  {t("pro.cta.button", "Register as a Professional")}
                   <ChevronRight size={15} />
                 </Link>
                 <div className="cm-pro-cta-note">
-                  Already registered?{" "}
-                  <Link href="/auth/login" className="cm-pro-cta-link">Sign in to your account</Link>
+                  {t("pro.cta.note_prefix", "Already registered?")}{" "}
+                  <Link href="/auth/login" className="cm-pro-cta-link">{t("pro.cta.note_link", "Sign in to your account")}</Link>
                 </div>
               </div>
             </div>
@@ -336,46 +347,55 @@ export default function Home() {
         <section id="contact" className="cm-section cm-dark-section">
           <div className="cm-section-header dark">
             <div className="cm-section-num">§ 05</div>
-            <h2 className="cm-section-title">Contact &amp; Support</h2>
+            <h2 className="cm-section-title">{t("sections.contact.title", "Contact & Support")}</h2>
             <div className="cm-section-rule dark" />
           </div>
 
           <div className="cm-contact-grid">
             <div className="cm-contact-col">
-              <div className="cm-contact-block-title">Get in Touch</div>
+              <div className="cm-contact-block-title">{t("contact.block1.title", "Get in Touch")}</div>
               <p className="cm-contact-body">
-                For questions about the platform, help finding a professional, or support with
-                your account, our team is available Monday through Saturday, 9 AM to 6 PM IST.
+                {t("contact.block1.body", "For questions about the platform, help finding a professional, or support with your account, our team is available Monday through Saturday, 9 AM to 6 PM IST.")}
               </p>
               <div className="cm-contact-items">
-                <div className="cm-contact-item"><Mail size={14} /> support@counselmate.in</div>
-                <div className="cm-contact-item"><Phone size={14} /> +91 98765 43210</div>
-                <div className="cm-contact-item"><MapPin size={14} /> New Delhi, India</div>
+                <div className="cm-contact-item"><Mail size={14} /> {t("contact.block1.email", "support@counselmate.in")}</div>
+                <div className="cm-contact-item"><Phone size={14} /> {t("contact.block1.phone", "+91 98765 43210")}</div>
+                <div className="cm-contact-item"><MapPin size={14} /> {t("contact.block1.location", "New Delhi, India")}</div>
               </div>
             </div>
             <div className="cm-contact-col">
-              <div className="cm-contact-block-title">For Professionals</div>
+              <div className="cm-contact-block-title">{t("contact.block2.title", "For Professionals")}</div>
               <p className="cm-contact-body">
-                If you are a CA or Lawyer looking to list your services, or have questions
-                about credential verification, our professional onboarding team can assist.
+                {t("contact.block2.body", "If you are a CA or Lawyer looking to list your services, or have questions about credential verification, our professional onboarding team can assist.")}
               </p>
               <div className="cm-contact-items">
-                <div className="cm-contact-item"><Mail size={14} /> professionals@counselmate.in</div>
-                <div className="cm-contact-item"><Clock size={14} /> Verification: 2–3 business days</div>
+                <div className="cm-contact-item"><Mail size={14} /> {t("contact.block2.email", "professionals@counselmate.in")}</div>
+                <div className="cm-contact-item"><Clock size={14} /> {t("contact.block2.verification", "Verification: 2–3 business days")}</div>
               </div>
             </div>
             <div className="cm-contact-col">
-              <div className="cm-contact-block-title">Quick Links</div>
+              <div className="cm-contact-block-title">{t("contact.block3.title", "Quick Links")}</div>
               <div className="cm-contact-links">
-                <Link href="/professionals"              className="cm-contact-link">Browse Professionals →</Link>
-                <Link href="/auth/register?role=APPRENTICE"   className="cm-contact-link">Register as Client →</Link>
-                <Link href="/auth/register?role=PROFESSIONAL" className="cm-contact-link">Register as Professional →</Link>
-                <Link href="/jobs"                       className="cm-contact-link">Job Board →</Link>
-                <Link href="/auth/login"                 className="cm-contact-link">Sign In →</Link>
+                <Link href="/professionals"              className="cm-contact-link">{t("contact.links.browse", "Browse Professionals →")}</Link>
+                <Link href="/auth/register?role=APPRENTICE"   className="cm-contact-link">{t("contact.links.register_client", "Register as Client →")}</Link>
+                <Link href="/auth/register?role=PROFESSIONAL" className="cm-contact-link">{t("contact.links.register_professional", "Register as Professional →")}</Link>
+                <Link href="/jobs"                       className="cm-contact-link">{t("contact.links.jobs", "Job Board →")}</Link>
+                <Link href="/auth/login"                 className="cm-contact-link">{t("contact.links.signin", "Sign In →")}</Link>
               </div>
             </div>
           </div>
         </section>
+
+        <footer className="cm-footer">
+          <div className="cm-footer-rule" />
+          <div className="cm-footer-inner">
+            <span>{t("footer.left", "© 2026 CounselMate. All rights reserved.")}</span>
+            <span className="cm-footer-sep">•</span>
+            <span>{t("footer.center", "Built for India's legal and financial ecosystem.")}</span>
+            <span className="cm-footer-sep">•</span>
+            <span>{t("footer.right", "Privacy • Terms • Support")}</span>
+          </div>
+        </footer>
       </div>
     </>
   )

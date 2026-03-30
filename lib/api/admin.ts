@@ -14,6 +14,7 @@ export interface LandingContent {
   services_intro: string
   how_it_works_intro: string
   why_us_intro: string
+  content_map?: Record<string, string>
   updated_at: string
 }
 
