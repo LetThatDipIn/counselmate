@@ -14,9 +14,24 @@ import { Loader2, ArrowLeft, Check, X } from "lucide-react"
 import { PROFESSION_SKILLS, CERTIFICATIONS, LANGUAGES, PROFESSION_TITLES } from "@/lib/professional-data"
 import type { ProfessionType, UpdateProfileRequest, Profile } from "@/lib/api/types"
 
+const ALLOWED_PROFESSION_TYPES: ProfessionType[] = [
+  'POWER_OF_ATTORNEY',
+  'MARRIAGE_REGISTRATION',
+  'LEGAL_HEIR_CERTIFICATE',
+]
+
+const normalizeProfessionType = (value?: string): ProfessionType => {
+  const typedValue = value as ProfessionType | undefined
+  if (typedValue && ALLOWED_PROFESSION_TYPES.includes(typedValue)) {
+    return typedValue
+  }
+  return 'POWER_OF_ATTORNEY'
+}
+
 export default function EditProfessionalProfilePage() {
   const { user, isAuthenticated, loading } = useAuth()
   const router = useRouter()
+  const [mode, setMode] = useState<'create' | 'edit'>('edit')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
@@ -54,9 +69,12 @@ export default function EditProfessionalProfilePage() {
       setIsLoadingProfile(true)
       profilesAPI.getMyProfile()
         .then((profile: Profile) => {
+          const normalizedProfessionType = normalizeProfessionType(profile.profession_type)
+
+          setMode('edit')
           setProfileId(profile.id)
           setFormData({
-            profession_type: profile.profession_type || 'POWER_OF_ATTORNEY',
+            profession_type: normalizedProfessionType,
             title: profile.title || '',
             bio: profile.bio || '',
             skills: profile.skills || [],
@@ -74,7 +92,25 @@ export default function EditProfessionalProfilePage() {
           })
         })
         .catch(() => {
-          router.push('/profile/professional/create')
+          setMode('create')
+          setProfileId(null)
+          setFormData({
+            profession_type: 'POWER_OF_ATTORNEY',
+            title: '',
+            bio: '',
+            skills: [],
+            location: '',
+            city: '',
+            state: '',
+            experience_years: 0,
+            availability: 'AVAILABLE',
+            hourly_rate: 0,
+            profile_picture: '',
+            linkedin_url: '',
+            website_url: '',
+            certifications: [],
+            languages: [],
+          })
         })
         .finally(() => setIsLoadingProfile(false))
     }
@@ -171,17 +207,23 @@ export default function EditProfessionalProfilePage() {
 
     setIsSubmitting(true)
     try {
-      await profilesAPI.updateProfile(formData)
+      if (mode === 'create') {
+        await profilesAPI.createProfile(formData)
+      } else {
+        await profilesAPI.updateProfile(formData)
+      }
       
       // Refresh profile data from backend
       const updatedProfile = await profilesAPI.getMyProfile()
       
       // Update form with fresh data
       if (updatedProfile) {
+        setMode('edit')
+        setProfileId(updatedProfile.id)
         setFormData({
           title: updatedProfile.title || '',
           bio: updatedProfile.bio || '',
-          profession_type: updatedProfile.profession_type,
+          profession_type: normalizeProfessionType(updatedProfile.profession_type),
           experience_years: updatedProfile.experience_years || 0,
           city: updatedProfile.city || '',
           state: updatedProfile.state || '',
@@ -197,10 +239,10 @@ export default function EditProfessionalProfilePage() {
         })
       }
       
-      toast.success('Professional profile updated successfully!')
+      toast.success(mode === 'create' ? 'Professional profile created successfully!' : 'Professional profile updated successfully!')
       router.push('/dashboard')
     } catch (error) {
-      const errorMsg = error instanceof Error ? error.message : 'Failed to update profile'
+      const errorMsg = error instanceof Error ? error.message : (mode === 'create' ? 'Failed to create profile' : 'Failed to update profile')
       toast.error(errorMsg)
     } finally {
       setIsSubmitting(false)
@@ -239,8 +281,8 @@ export default function EditProfessionalProfilePage() {
             <ArrowLeft size={20} />
           </button>
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">Edit Professional Profile</h1>
-            <p className="text-gray-600 mt-2">Update your information to attract more clients</p>
+            <h1 className="text-3xl font-bold text-gray-900">{mode === 'create' ? 'Create Professional Profile' : 'Edit Professional Profile'}</h1>
+            <p className="text-gray-600 mt-2">{mode === 'create' ? 'Complete your profile to attract clients' : 'Update your information to attract more clients'}</p>
           </div>
         </div>
 
@@ -603,12 +645,12 @@ export default function EditProfessionalProfilePage() {
                 {isSubmitting && (
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 )}
-                {isSubmitting ? 'Saving...' : 'Save Changes'}
+                {isSubmitting ? 'Saving...' : mode === 'create' ? 'Create Profile' : 'Save Changes'}
               </Button>
             </div>
 
             {/* Delete Button */}
-            {!showDeleteConfirm && (
+            {mode === 'edit' && !showDeleteConfirm && (
               <Button
                 variant="destructive"
                 onClick={() => setShowDeleteConfirm(true)}
@@ -619,7 +661,7 @@ export default function EditProfessionalProfilePage() {
             )}
 
             {/* Delete Confirmation */}
-            {showDeleteConfirm && (
+            {mode === 'edit' && showDeleteConfirm && (
               <div className="p-4 bg-red-50 border border-red-200 rounded-lg space-y-3">
                 <p className="text-sm font-medium text-red-900">
                   Are you sure you want to delete your profile? This action cannot be undone.
