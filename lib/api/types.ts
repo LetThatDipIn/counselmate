@@ -5,12 +5,9 @@
 export type Role = 'APPRENTICE' | 'PROFESSIONAL' | 'ADMIN';
 export type AuthProvider = 'LOCAL' | 'GOOGLE';
 export type ProfessionType = 
-  | 'CA_APPRENTICE' 
-  | 'CA' 
-  | 'LAWYER' 
-  | 'ADVOCATE' 
-  | 'LAW_FIRM' 
-  | 'CA_FIRM';
+  | 'POWER_OF_ATTORNEY'
+  | 'MARRIAGE_REGISTRATION'
+  | 'LEGAL_HEIR_CERTIFICATE';
 export type PlanType = 'FREE' | 'PREMIUM';
 export type Availability = 'AVAILABLE' | 'NOT_AVAILABLE' | 'PART_TIME';
 

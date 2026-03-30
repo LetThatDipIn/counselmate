@@ -14,12 +14,9 @@ import { toast } from 'sonner'
 
 /* ── helpers ── */
 const getProfessionLabel = (type: string) => ({
-  CA: 'Chartered Accountant',
-  CA_APPRENTICE: 'CA Apprentice',
-  LAWYER: 'Lawyer',
-  ADVOCATE: 'Advocate',
-  LAW_FIRM: 'Law Firm',
-  CA_FIRM: 'CA Firm',
+  POWER_OF_ATTORNEY: 'Power of Attorney',
+  MARRIAGE_REGISTRATION: 'Marriage Registration',
+  LEGAL_HEIR_CERTIFICATE: 'Legal Heir Certificate',
 }[type] ?? type)
 
 const availabilityMeta = (a: string) => {

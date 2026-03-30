@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { toast } from "sonner"
 import { Loader2, ArrowLeft, Check, X } from "lucide-react"
 import { PROFESSION_SKILLS, CERTIFICATIONS, LANGUAGES, PROFESSION_TITLES } from "@/lib/professional-data"
-import type { UpdateProfileRequest, Profile } from "@/lib/api/types"
+import type { ProfessionType, UpdateProfileRequest, Profile } from "@/lib/api/types"
 
 export default function EditProfessionalProfilePage() {
   const { user, isAuthenticated, loading } = useAuth()
@@ -23,7 +23,7 @@ export default function EditProfessionalProfilePage() {
   const [isLoadingProfile, setIsLoadingProfile] = useState(true)
   const [profileId, setProfileId] = useState<string | null>(null)
   const [formData, setFormData] = useState<UpdateProfileRequest>({
-    profession_type: 'CA',
+    profession_type: 'POWER_OF_ATTORNEY',
     title: '',
     bio: '',
     skills: [],
@@ -56,7 +56,7 @@ export default function EditProfessionalProfilePage() {
         .then((profile: Profile) => {
           setProfileId(profile.id)
           setFormData({
-            profession_type: profile.profession_type || 'CA',
+            profession_type: profile.profession_type || 'POWER_OF_ATTORNEY',
             title: profile.title || '',
             bio: profile.bio || '',
             skills: profile.skills || [],
@@ -90,7 +90,7 @@ export default function EditProfessionalProfilePage() {
 
   if (!user || user.role !== 'PROFESSIONAL') return null
 
-  const professionType = (formData.profession_type || 'CA') as keyof typeof PROFESSION_SKILLS
+  const professionType = (formData.profession_type || 'POWER_OF_ATTORNEY') as keyof typeof PROFESSION_SKILLS
   const availableSkills = PROFESSION_SKILLS[professionType] || []
   const availableCerts = CERTIFICATIONS[professionType] || []
   const availableTitles = PROFESSION_TITLES[professionType] || []
@@ -181,7 +181,7 @@ export default function EditProfessionalProfilePage() {
         setFormData({
           title: updatedProfile.title || '',
           bio: updatedProfile.bio || '',
-          profession_type: updatedProfile.profession_type as any,
+          profession_type: updatedProfile.profession_type,
           experience_years: updatedProfile.experience_years || 0,
           city: updatedProfile.city || '',
           state: updatedProfile.state || '',
@@ -255,18 +255,18 @@ export default function EditProfessionalProfilePage() {
               <div>
                 <Label>Profession Type</Label>
                 <Select
-                  value={formData.profession_type || 'CA'}
+                  value={formData.profession_type || 'POWER_OF_ATTORNEY'}
                   onValueChange={(value) =>
-                    setFormData({ ...formData, profession_type: value as any })
+                    setFormData({ ...formData, profession_type: value as ProfessionType })
                   }
                 >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="CA">Chartered Accountant</SelectItem>
-                    <SelectItem value="CONSULTANT">Business Consultant</SelectItem>
-                    <SelectItem value="LAWYER">Lawyer</SelectItem>
+                    <SelectItem value="POWER_OF_ATTORNEY">Power of Attorney</SelectItem>
+                    <SelectItem value="MARRIAGE_REGISTRATION">Marriage Registration</SelectItem>
+                    <SelectItem value="LEGAL_HEIR_CERTIFICATE">Legal Heir Certificate</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -394,7 +394,7 @@ export default function EditProfessionalProfilePage() {
                   onValueChange={(value) =>
                     setFormData({
                       ...formData,
-                      availability: value as any,
+                      availability: value,
                     })
                   }
                 >
