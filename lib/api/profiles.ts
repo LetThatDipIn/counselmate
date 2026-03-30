@@ -77,6 +77,7 @@ export interface ProfileContactMessage {
   profile_id: string
   sender_user_id: string
   recipient_user_id: string
+  booking_id?: string
   subject: string
   message: string
   status: 'PENDING' | 'ACCEPTED' | 'REJECTED'
