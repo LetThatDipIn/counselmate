@@ -5,6 +5,15 @@
 import { apiClient } from './client';
 import type { User, UpdateUserRequest, ChangePasswordRequest } from './types';
 
+export interface UpdateUserResponse {
+  user: User;
+  tokens?: {
+    access_token: string;
+    refresh_token: string;
+    expires_at: number;
+  };
+}
+
 export const usersAPI = {
   // Get user by ID
   getUser: async (id: string): Promise<User> => {
@@ -12,8 +21,8 @@ export const usersAPI = {
   },
 
   // Update user
-  updateUser: async (id: string, data: UpdateUserRequest): Promise<User> => {
-    return apiClient.put<User>(`/users/${id}`, data);
+  updateUser: async (id: string, data: UpdateUserRequest): Promise<UpdateUserResponse> => {
+    return apiClient.put<UpdateUserResponse>(`/users/${id}`, data);
   },
 
   // Change password

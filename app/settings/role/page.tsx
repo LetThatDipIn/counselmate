@@ -8,6 +8,7 @@ import {
   AlertCircle, Loader2, ChevronLeft
 } from "lucide-react"
 import { usersAPI } from "@/lib/api"
+import { apiClient } from "@/lib/api/client"
 
 export default function RoleSettingsPage() {
   const { user, refreshUser } = useAuth()
@@ -31,7 +32,13 @@ export default function RoleSettingsPage() {
     if (user.role === newRole) { setError(`You're already in ${newRole} mode.`); return }
     setLoading(true); setError(""); setSuccess("")
     try {
-      await usersAPI.updateUser(user.id, { role: newRole })
+      const response = await usersAPI.updateUser(user.id, { role: newRole })
+      if (response.tokens?.access_token) {
+        apiClient.setToken(response.tokens.access_token)
+        if (typeof window !== "undefined" && response.tokens.refresh_token) {
+          localStorage.setItem("refresh_token", response.tokens.refresh_token)
+        }
+      }
       await refreshUser()
       setSuccess(`Switched to ${newRole} mode. Redirecting…`)
       setTimeout(() => router.push('/dashboard'), 2000)
