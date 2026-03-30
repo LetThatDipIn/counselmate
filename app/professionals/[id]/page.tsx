@@ -41,7 +41,7 @@ export default function ProfessionalProfilePage() {
   const [contactForm, setContactForm]     = useState({ subject: '', message: '' })
 
   const isOwnProfile = !!(user && profile && user.id === profile.user_id)
-  const isProfessionalViewer = user?.role === 'PROFESSIONAL'
+  const isProfessionalViewer = (user?.role || '').toString().toUpperCase() === 'PROFESSIONAL'
   const canMessageProfessional = !!(isAuthenticated && !isOwnProfile && !isProfessionalViewer)
 
   const handleContact = async () => {

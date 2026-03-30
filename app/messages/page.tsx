@@ -113,7 +113,7 @@ export default function MessagesPage() {
   const remoteVideoRef = useRef<HTMLVideoElement>(null)
   const chatBottomRef = useRef<HTMLDivElement>(null)
 
-  const isProfessional = user?.role === "PROFESSIONAL"
+  const isProfessional = (user?.role || "").toString().toUpperCase() === "PROFESSIONAL"
 
   const visibleBookings = useMemo(() => {
     if (!user) return []
