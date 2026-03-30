@@ -15,6 +15,7 @@ function getAPIBaseURL(): string {
 class APIClient {
   private baseURL: string;
   private token: string | null = null;
+  private refreshPromise: Promise<string | null> | null = null;
 
   constructor(baseURL?: string) {
     this.baseURL = baseURL || getAPIBaseURL();
@@ -42,9 +43,87 @@ class APIClient {
     return this.token;
   }
 
+  private clearAuthStorage() {
+    this.token = null;
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('access_token');
+      localStorage.removeItem('refresh_token');
+    }
+  }
+
+  private buildHeaders(options: RequestInit, token: string | null): Record<string, string> {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(options.headers as Record<string, string>),
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+      console.debug('[APIClient.request] Authorization header set with token:', token.substring(0, 20) + '...');
+    } else {
+      console.debug('[APIClient.request] No token available, request will be unauthenticated');
+    }
+
+    return headers;
+  }
+
+  private canAttemptRefresh(endpoint: string): boolean {
+    return !endpoint.startsWith('/auth/refresh')
+  }
+
+  private async refreshAccessToken(): Promise<string | null> {
+    if (typeof window === 'undefined') {
+      return null;
+    }
+
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = (async () => {
+      const refreshToken = localStorage.getItem('refresh_token');
+      if (!refreshToken) {
+        this.clearAuthStorage();
+        return null;
+      }
+
+      try {
+        const response = await fetch(`${this.baseURL}/auth/refresh`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh_token: refreshToken }),
+        });
+
+        if (!response.ok) {
+          this.clearAuthStorage();
+          return null;
+        }
+
+        const payload = await response.json() as { access_token?: string };
+        if (!payload.access_token) {
+          this.clearAuthStorage();
+          return null;
+        }
+
+        this.setToken(payload.access_token);
+        return payload.access_token;
+      } catch {
+        this.clearAuthStorage();
+        return null;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestInit = {},
+    retryOnAuthFailure = true,
   ): Promise<T> {
     // Always re-read from localStorage as source of truth
     // This ensures we have the latest token even if it was updated elsewhere
@@ -55,17 +134,7 @@ class APIClient {
     console.debug('[APIClient.request] Current token from memory:', !!this.token);
     console.debug('[APIClient.request] Current token from localStorage:', !!currentToken);
 
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      ...(options.headers as Record<string, string>),
-    };
-
-    if (currentToken) {
-      headers['Authorization'] = `Bearer ${currentToken}`;
-      console.debug('[APIClient.request] Authorization header set with token:', currentToken.substring(0, 20) + '...');
-    } else {
-      console.debug('[APIClient.request] No token available, request will be unauthenticated');
-    }
+    const headers = this.buildHeaders(options, currentToken);
 
     console.debug('[APIClient.request] Calling:', this.baseURL + endpoint);
     
@@ -76,6 +145,32 @@ class APIClient {
 
     console.debug('[APIClient.request] Response status:', response.status, 'for endpoint:', endpoint);
 
+    if (response.status === 401 && retryOnAuthFailure && this.canAttemptRefresh(endpoint)) {
+      console.debug('[APIClient.request] Received 401, attempting token refresh');
+      const refreshedToken = await this.refreshAccessToken();
+      if (refreshedToken) {
+        console.debug('[APIClient.request] Token refresh succeeded, retrying request');
+        const retryHeaders = this.buildHeaders(options, refreshedToken);
+        const retryResponse = await fetch(`${this.baseURL}${endpoint}`, {
+          ...options,
+          headers: retryHeaders,
+        });
+
+        if (retryResponse.ok) {
+          return retryResponse.json();
+        }
+
+        const retryError = await retryResponse.json().catch(() => ({
+          message: retryResponse.statusText,
+        }));
+        const retryErrorMessage = retryError.message || `HTTP error! status: ${retryResponse.status}`;
+        const customRetryError = new Error(retryErrorMessage) as Error & { status?: number };
+        customRetryError.status = retryResponse.status;
+        customRetryError.message = `[${retryResponse.status}] ${retryErrorMessage}`;
+        throw customRetryError;
+      }
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         message: response.statusText,
@@ -83,7 +178,7 @@ class APIClient {
       
       // Create error with status code embedded
       const errorMessage = error.message || `HTTP error! status: ${response.status}`;
-      const customError = new Error(errorMessage) as any;
+  const customError = new Error(errorMessage) as Error & { status?: number };
       customError.status = response.status;
       customError.message = `[${response.status}] ${errorMessage}`;
       
@@ -98,7 +193,7 @@ class APIClient {
     return this.request<T>(endpoint, { ...options, method: 'GET' });
   }
 
-  async post<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T> {
+  async post<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
       method: 'POST',
@@ -106,7 +201,7 @@ class APIClient {
     });
   }
 
-  async put<T>(endpoint: string, data?: any, options?: RequestInit): Promise<T> {
+  async put<T>(endpoint: string, data?: unknown, options?: RequestInit): Promise<T> {
     return this.request<T>(endpoint, {
       ...options,
       method: 'PUT',

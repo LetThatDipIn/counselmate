@@ -14,6 +14,11 @@ import type {
   VerifyEmailRequest,
 } from './types';
 
+export interface RefreshTokenResponse {
+  access_token: string;
+  expires_at: string;
+}
+
 export const authAPI = {
   // Register new user
   register: async (data: RegisterRequest): Promise<AuthResponse> => {
@@ -44,8 +49,8 @@ export const authAPI = {
   },
 
   // Refresh token
-  refreshToken: async (refreshToken: string): Promise<AuthResponse> => {
-    return apiClient.post<AuthResponse>('/auth/refresh', { refresh_token: refreshToken });
+  refreshToken: async (refreshToken: string): Promise<RefreshTokenResponse> => {
+    return apiClient.post<RefreshTokenResponse>('/auth/refresh', { refresh_token: refreshToken });
   },
 
   // Email verification
