@@ -1,764 +1,750 @@
 "use client"
 
-import { useState, useRef, useEffect } from "react"
-import {
-  Search, Send, Phone, Video, MoreVertical,
-  Paperclip, MessageSquare, X, ChevronLeft
-} from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
+import { useAuth } from "@/lib/context/auth-context"
+import { bookingsAPI, paymentsAPI } from "@/lib/api"
+import { realtimeAPI, type FeeRequest, type HandshakeAgreement, type WSStoredMessage } from "@/lib/api/realtime"
+import type { Booking } from "@/lib/api/bookings"
+import { Send, Phone, Video, Mic, MicOff, VideoOff, MessageSquare, IndianRupee, Check, X, Loader2 } from "lucide-react"
+import { toast } from "sonner"
 
-/* ─── Types ───────────────────────────────────────── */
+type WSMessageType =
+  | "chat"
+  | "call_offer"
+  | "call_answer"
+  | "ice_candidate"
+  | "call_end"
+  | "session_start"
+  | "session_end"
+  | "typing_start"
+  | "typing_stop"
 
-interface Conversation {
-  id: number
+interface WSMessage {
+  type: WSMessageType
+  booking_id: string
+  sender_id?: string
+  receiver_id?: string
+  content?: string
+  sdp_offer?: string
+  sdp_answer?: string
+  ice_candidate?: string
+  timestamp?: string
+}
+
+type RazorpayCheckoutOptions = {
+  key: string
+  amount: number
+  currency: string
   name: string
-  role: string
-  avatar: string
-  lastMessage: string
-  timestamp: string
-  unread: number
-  online: boolean
+  description: string
+  order_id: string
+  handler: () => void
+  theme?: { color?: string }
 }
 
-interface Message {
-  id: number
-  senderId: number
-  senderName: string
-  text: string
-  timestamp: string
-  read: boolean
-  type: "text" | "file"
+type RazorpayPaymentOrder = {
+  razorpay_key_id: string
+  order_id: string
+  amount: number
+  currency?: string
 }
 
-/* ─── Mock data ───────────────────────────────────── */
+type RazorpayCtor = new (options: RazorpayCheckoutOptions) => { open: () => void }
 
-const mockConversations: Conversation[] = [
-  { id: 1, name: "Rajesh Kumar",  role: "Chartered Accountant", avatar: "R", lastMessage: "I'll send you the tax filing documents tomorrow", timestamp: "10:30 AM", unread: 0, online: true  },
-  { id: 2, name: "Priya Singh",   role: "Corporate Lawyer",     avatar: "P", lastMessage: "The contract has been reviewed. Let me schedule a call.", timestamp: "Yesterday", unread: 2, online: true  },
-  { id: 3, name: "Amit Patel",    role: "Tax Specialist",       avatar: "A", lastMessage: "Thanks for the clarity on the international tax issue", timestamp: "2 days ago", unread: 0, online: false },
-  { id: 4, name: "Neha Sharma",   role: "Labour Lawyer",        avatar: "N", lastMessage: "I've prepared the employment contract for review", timestamp: "3 days ago", unread: 0, online: false },
-]
-
-const mockMessages: Record<number, Message[]> = {
-  1: [
-    { id: 1, senderId: 2, senderName: "You", text: "Hi Rajesh, I need help with my GST compliance", timestamp: "9:00 AM", read: true, type: "text" },
-    { id: 2, senderId: 1, senderName: "Rajesh Kumar", text: "Sure, I can help you with that. What exactly is the issue you're facing?", timestamp: "9:15 AM", read: true, type: "text" },
-    { id: 3, senderId: 2, senderName: "You", text: "I'm getting confused about filing the quarterly returns — the input tax credit reconciliation especially.", timestamp: "9:30 AM", read: true, type: "text" },
-    { id: 4, senderId: 1, senderName: "Rajesh Kumar", text: "Understood. I'll send you the tax filing documents and a checklist tomorrow morning so we can work through it step by step.", timestamp: "10:30 AM", read: true, type: "text" },
-  ],
-  2: [
-    { id: 1, senderId: 2, senderName: "You", text: "Hi Priya, can you review my NDA before I sign it?", timestamp: "2:00 PM", read: true, type: "text" },
-    { id: 2, senderId: 3, senderName: "Priya Singh", text: "Yes, absolutely. Please share the document and I'll have a look.", timestamp: "2:15 PM", read: true, type: "text" },
-    { id: 3, senderId: 2, senderName: "You", text: "Shared the document →", timestamp: "2:20 PM", read: true, type: "file" },
-    { id: 4, senderId: 3, senderName: "Priya Singh", text: "The contract has been reviewed. Let me schedule a call to walk you through the clauses I've flagged.", timestamp: "3:00 PM", read: false, type: "text" },
-  ],
-  3: [
-    { id: 1, senderId: 2, senderName: "You", text: "Amit, quick question on DTAA provisions for my Singapore income.", timestamp: "Mon 11:00 AM", read: true, type: "text" },
-    { id: 2, senderId: 3, senderName: "Amit Patel", text: "Happy to clarify. The India-Singapore DTAA has specific provisions for royalties and tech services income.", timestamp: "Mon 11:30 AM", read: true, type: "text" },
-    { id: 3, senderId: 2, senderName: "You", text: "Thanks for the clarity on the international tax issue!", timestamp: "Mon 12:00 PM", read: true, type: "text" },
-  ],
-  4: [
-    { id: 1, senderId: 4, senderName: "Neha Sharma", text: "I've prepared the employment contract for review. A few clauses around IP assignment need your attention.", timestamp: "Wed 3:00 PM", read: true, type: "text" },
-    { id: 2, senderId: 2, senderName: "You", text: "Great, I'll go through it tonight.", timestamp: "Wed 4:00 PM", read: true, type: "text" },
-  ],
-}
-
-const autoReplies = [
-  "Thanks for your message! I'll get back to you shortly.",
-  "Got it, let me look into this and follow up.",
-  "Sure, I can help with that. Give me a moment.",
-]
-
-/* ─── Page ────────────────────────────────────────── */
+const getRazorpayWindow = () => window as Window & { Razorpay?: RazorpayCtor }
 
 export default function MessagesPage() {
-  const [selected, setSelected]       = useState<Conversation>(mockConversations[0])
-  const [messageText, setMessageText] = useState("")
-  const [allMessages, setAllMessages] = useState<Record<number, Message[]>>(mockMessages)
-  const [search, setSearch]           = useState("")
-  const [mobileView, setMobileView]   = useState<"list" | "chat">("list")
-  const endRef = useRef<HTMLDivElement>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
+  const { user, isAuthenticated } = useAuth()
+  const searchParams = useSearchParams()
+  const consultantQuery = searchParams.get("consultant")
 
-  const messages = allMessages[selected?.id] || []
+  const [bookings, setBookings] = useState<Booking[]>([])
+  const [loadingBookings, setLoadingBookings] = useState(false)
+  const [selected, setSelected] = useState<Booking | null>(null)
+
+  const [messages, setMessages] = useState<WSStoredMessage[]>([])
+  const [messageInput, setMessageInput] = useState("")
+  const [chatLoading, setChatLoading] = useState(false)
+
+  const [handshake, setHandshake] = useState<HandshakeAgreement | null>(null)
+  const [handshakeByBooking, setHandshakeByBooking] = useState<Record<string, HandshakeAgreement | null>>({})
+  const [termsOpen, setTermsOpen] = useState(false)
+  const [termsAccepted, setTermsAccepted] = useState(false)
+
+  const [feeRequests, setFeeRequests] = useState<FeeRequest[]>([])
+  const [feeModalOpen, setFeeModalOpen] = useState(false)
+  const [feeAmount, setFeeAmount] = useState("1000")
+  const [feeNote, setFeeNote] = useState("Legal consultation fee")
+
+  const [callOpen, setCallOpen] = useState(false)
+  const [chatPaneInCall, setChatPaneInCall] = useState(true)
+  const [, setInCall] = useState(false)
+  const [muted, setMuted] = useState(false)
+  const [cameraOff, setCameraOff] = useState(false)
+
+  const wsRef = useRef<WebSocket | null>(null)
+  const pcRef = useRef<RTCPeerConnection | null>(null)
+  const localStreamRef = useRef<MediaStream | null>(null)
+  const localVideoRef = useRef<HTMLVideoElement>(null)
+  const remoteVideoRef = useRef<HTMLVideoElement>(null)
+  const chatBottomRef = useRef<HTMLDivElement>(null)
+
+  const isProfessional = user?.role === "PROFESSIONAL"
+
+  const visibleBookings = useMemo(() => {
+    if (!user) return []
+    return bookings.filter((b) => {
+      if (b.user_id === b.consultant_id) return false
+      return b.user_id === user.id || b.consultant_id === user.id
+    })
+  }, [bookings, user])
+
+  const incomingRequests = useMemo(() => {
+    if (!user) return []
+    return visibleBookings.filter((b) => {
+      const hs = handshakeByBooking[b.id]
+      return hs?.status === "PENDING" && hs.responder_id === user.id
+    })
+  }, [handshakeByBooking, user, visibleBookings])
+
+  const activeConversations = useMemo(() => {
+    return visibleBookings.filter((b) => handshakeByBooking[b.id]?.status === "ACTIVE")
+  }, [handshakeByBooking, visibleBookings])
+
+  const pendingSentRequests = useMemo(() => {
+    if (!user) return []
+    return visibleBookings.filter((b) => {
+      const hs = handshakeByBooking[b.id]
+      return hs?.status === "PENDING" && hs.requester_id === user.id
+    })
+  }, [handshakeByBooking, user, visibleBookings])
+
+  const counterpartId = useMemo(() => {
+    if (!selected || !user) return ""
+    return isProfessional ? selected.user_id : selected.consultant_id
+  }, [isProfessional, selected, user])
+
+  const wsUrl = useMemo(() => {
+    if (!selected) return ""
+    const apiBase = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8080/api"
+    const token = typeof window !== "undefined" ? localStorage.getItem("access_token") || "" : ""
+    const role = isProfessional ? "consultant" : "user"
+    try {
+      const u = new URL(apiBase)
+      const protocol = u.protocol === "https:" ? "wss:" : "ws:"
+      const path = `${u.pathname.replace(/\/$/, "")}/ws/chat`
+      const params = new URLSearchParams({ booking: selected.id, role })
+      if (token) params.set("token", token)
+      return `${protocol}//${u.host}${path}?${params.toString()}`
+    } catch {
+      return ""
+    }
+  }, [isProfessional, selected])
+
+  const sendWS = useCallback((msg: WSMessage) => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+      toast.error("Socket not connected")
+      return
+    }
+    wsRef.current.send(JSON.stringify(msg))
+  }, [])
+
+  const loadBookings = useCallback(async () => {
+    if (!isAuthenticated || !user) return
+    setLoadingBookings(true)
+    try {
+      const data = isProfessional
+        ? await bookingsAPI.getConsultantBookings(1, 50)
+        : await bookingsAPI.getMyBookings(1, 50)
+
+      const fetchedBookings = (data.bookings || []).filter((b) => {
+        // Never allow self-thread rows.
+        if (b.user_id === b.consultant_id) return false
+        if (isProfessional) return b.consultant_id === user.id
+        return b.user_id === user.id
+      })
+
+      setBookings(fetchedBookings)
+
+      const handshakeEntries = await Promise.all(
+        fetchedBookings.map(async (b) => {
+          const hs = await realtimeAPI.getHandshakeStatus(b.id)
+          return [b.id, hs] as const
+        }),
+      )
+      const handshakeMap = Object.fromEntries(handshakeEntries)
+      setHandshakeByBooking(handshakeMap)
+
+      if (!selected && fetchedBookings.length) {
+        if (consultantQuery && consultantQuery === user.id) {
+          toast.error("You cannot message yourself")
+        }
+
+        const deepLinked = consultantQuery
+          ? fetchedBookings.find((b) => b.consultant_id === consultantQuery)
+          : undefined
+
+        const firstIncoming = isProfessional
+          ? fetchedBookings.find((b) => {
+              const hs = handshakeMap[b.id]
+              return hs?.status === "PENDING" && hs.responder_id === user.id
+            })
+          : undefined
+
+        setSelected(deepLinked || firstIncoming || fetchedBookings[0])
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load conversations")
+    } finally {
+      setLoadingBookings(false)
+    }
+  }, [consultantQuery, isAuthenticated, isProfessional, selected, user])
+
+  const loadThreadData = useCallback(async (booking: Booking) => {
+    setChatLoading(true)
+    try {
+      const [msgs, hs, fees] = await Promise.all([
+        realtimeAPI.getMessages(booking.id, 250),
+        realtimeAPI.getHandshakeStatus(booking.id),
+        realtimeAPI.getFeeRequests(booking.id),
+      ])
+      setMessages(msgs)
+      setHandshake(hs)
+      setHandshakeByBooking((prev) => ({ ...prev, [booking.id]: hs }))
+      setFeeRequests(fees)
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to load thread")
+    } finally {
+      setChatLoading(false)
+    }
+  }, [])
 
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth" })
+    loadBookings()
+  }, [loadBookings])
+
+  useEffect(() => {
+    if (!selected) return
+    loadThreadData(selected)
+  }, [loadThreadData, selected])
+
+  useEffect(() => {
+    chatBottomRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const handleSelect = (conv: Conversation) => {
-    setSelected(conv)
-    setMobileView("chat")
-    // Clear unread
-    // (in a real app you'd call an API)
+  useEffect(() => {
+    if (!selected || handshake?.status !== "ACTIVE") {
+      wsRef.current?.close()
+      wsRef.current = null
+      return
+    }
+    if (!wsUrl) return
+
+    const socket = new WebSocket(wsUrl)
+    wsRef.current = socket
+
+    socket.onmessage = async (event) => {
+      const msg = JSON.parse(event.data) as WSMessage
+      if (msg.type === "chat" && msg.content) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: crypto.randomUUID(),
+            booking_id: msg.booking_id,
+            sender_id: msg.sender_id || "unknown",
+            content: msg.content || "",
+            created_at: msg.timestamp || new Date().toISOString(),
+          },
+        ])
+      }
+
+      if (msg.type === "call_offer" && msg.sdp_offer) {
+        setCallOpen(true)
+        await ensureMedia(true)
+        const pc = ensurePeerConnection()
+        await pc.setRemoteDescription(new RTCSessionDescription(JSON.parse(msg.sdp_offer)))
+        const answer = await pc.createAnswer()
+        await pc.setLocalDescription(answer)
+        sendWS({
+          type: "call_answer",
+          booking_id: selected.id,
+          receiver_id: msg.sender_id,
+          sdp_answer: JSON.stringify(answer),
+        })
+        setInCall(true)
+      }
+
+      if (msg.type === "call_answer" && msg.sdp_answer && pcRef.current) {
+        await pcRef.current.setRemoteDescription(new RTCSessionDescription(JSON.parse(msg.sdp_answer)))
+      }
+
+      if (msg.type === "ice_candidate" && msg.ice_candidate && pcRef.current) {
+        await pcRef.current.addIceCandidate(new RTCIceCandidate(JSON.parse(msg.ice_candidate)))
+      }
+
+      if (msg.type === "call_end") {
+        endCall()
+      }
+    }
+
+    socket.onopen = () => toast.success("Realtime connected")
+    socket.onclose = () => toast("Realtime disconnected")
+
+    return () => {
+      socket.close()
+    }
+  }, [handshake?.status, selected, sendWS, wsUrl])
+
+  const ensurePeerConnection = () => {
+    if (pcRef.current) return pcRef.current
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] })
+    pc.ontrack = (event) => {
+      if (remoteVideoRef.current) remoteVideoRef.current.srcObject = event.streams[0]
+    }
+    pc.onicecandidate = (event) => {
+      if (!event.candidate || !selected) return
+      sendWS({
+        type: "ice_candidate",
+        booking_id: selected.id,
+        receiver_id: counterpartId || undefined,
+        ice_candidate: JSON.stringify(event.candidate),
+      })
+    }
+    pcRef.current = pc
+    return pc
   }
 
-  const handleSend = () => {
-    if (!messageText.trim()) return
-    const now = new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" })
-    const newMsg: Message = {
-      id: Date.now(),
-      senderId: 0,
-      senderName: "You",
-      text: messageText,
-      timestamp: now,
-      read: false,
-      type: "text",
+  const ensureMedia = async (video: boolean) => {
+    if (localStreamRef.current) return
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video })
+    localStreamRef.current = stream
+    if (localVideoRef.current) localVideoRef.current.srcObject = stream
+    const pc = ensurePeerConnection()
+    stream.getTracks().forEach((track) => pc.addTrack(track, stream))
+  }
+
+  const startCall = async (video: boolean) => {
+    if (!selected) return
+    if (handshake?.status !== "ACTIVE") {
+      setTermsOpen(true)
+      return
     }
-    setAllMessages(prev => ({
+    try {
+      setCallOpen(true)
+      await ensureMedia(video)
+      const pc = ensurePeerConnection()
+      const offer = await pc.createOffer()
+      await pc.setLocalDescription(offer)
+      sendWS({
+        type: "call_offer",
+        booking_id: selected.id,
+        receiver_id: counterpartId || undefined,
+        sdp_offer: JSON.stringify(offer),
+      })
+      setInCall(true)
+    } catch {
+      toast.error("Failed to start call")
+    }
+  }
+
+  const endCall = () => {
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach((t) => t.stop())
+      localStreamRef.current = null
+    }
+    if (pcRef.current) {
+      pcRef.current.close()
+      pcRef.current = null
+    }
+    setInCall(false)
+    setCallOpen(false)
+  }
+
+  const sendChat = () => {
+    if (!selected || !messageInput.trim()) return
+    if (handshake?.status !== "ACTIVE") {
+      setTermsOpen(true)
+      return
+    }
+
+    sendWS({
+      type: "chat",
+      booking_id: selected.id,
+      receiver_id: counterpartId || undefined,
+      content: messageInput.trim(),
+    })
+
+    setMessages((prev) => [
       ...prev,
-      [selected.id]: [...(prev[selected.id] || []), newMsg],
-    }))
-    setMessageText("")
-    inputRef.current?.focus()
-
-    // Simulate reply
-    const reply: Message = {
-      id: Date.now() + 1,
-      senderId: selected.id,
-      senderName: selected.name,
-      text: autoReplies[Math.floor(Math.random() * autoReplies.length)],
-      timestamp: new Date().toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }),
-      read: false,
-      type: "text",
-    }
-    setTimeout(() => {
-      setAllMessages(prev => ({
-        ...prev,
-        [selected.id]: [...(prev[selected.id] || []), reply],
-      }))
-    }, 1100)
+      {
+        id: crypto.randomUUID(),
+        booking_id: selected.id,
+        sender_id: user?.id || "me",
+        content: messageInput.trim(),
+        created_at: new Date().toISOString(),
+      },
+    ])
+    setMessageInput("")
   }
 
-  const filtered = mockConversations.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.role.toLowerCase().includes(search.toLowerCase())
-  )
+  const requestHandshake = async () => {
+    if (!selected) return
+    if (isProfessional) {
+      toast.error("Professionals can only accept or deny incoming requests")
+      return
+    }
+    if (!termsAccepted) {
+      toast.error("Please agree to terms first")
+      return
+    }
+    try {
+      const hs = await realtimeAPI.requestHandshake(selected.id, "v1")
+      setHandshake(hs)
+      setHandshakeByBooking((prev) => ({ ...prev, [selected.id]: hs }))
+      setTermsOpen(false)
+      toast.success("Message request sent")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to send handshake")
+    }
+  }
 
-  const totalUnread = mockConversations.reduce((s, c) => s + c.unread, 0)
+  const respondHandshake = async (accept: boolean) => {
+    if (!selected) return
+    try {
+      const hs = await realtimeAPI.respondHandshake(selected.id, accept)
+      setHandshake(hs)
+      setHandshakeByBooking((prev) => ({ ...prev, [selected.id]: hs }))
+      toast.success(accept ? "Request accepted" : "Request rejected")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to respond")
+    }
+  }
+
+  const createFeeRequest = async () => {
+    if (!selected) return
+    try {
+      const req = await realtimeAPI.createFeeRequest(selected.id, Number(feeAmount), feeNote)
+      setFeeRequests((prev) => [req, ...prev])
+      setFeeModalOpen(false)
+      toast.success("Fee request sent")
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create request")
+    }
+  }
+
+  const ensureRazorpayScript = async () => {
+    if (getRazorpayWindow().Razorpay) return true
+    await new Promise<void>((resolve, reject) => {
+      const s = document.createElement("script")
+      s.src = "https://checkout.razorpay.com/v1/checkout.js"
+      s.onload = () => resolve()
+      s.onerror = () => reject(new Error("Failed to load Razorpay"))
+      document.body.appendChild(s)
+    })
+    return !!getRazorpayWindow().Razorpay
+  }
+
+  const payFeeRequest = async (req: FeeRequest) => {
+    if (!selected) return
+    try {
+      await realtimeAPI.respondFeeRequest(req.id, true)
+      const order = await paymentsAPI.createPaymentOrder({
+        service_id: selected.service_id,
+        consultant_id: selected.consultant_id,
+        amount: req.amount_rupees,
+      }) as RazorpayPaymentOrder
+
+      const loaded = await ensureRazorpayScript()
+      const win = getRazorpayWindow()
+      if (!loaded || !win.Razorpay) {
+        toast.success("Payment order created. Razorpay UI not available in this browser.")
+        return
+      }
+
+      const options = {
+        key: order.razorpay_key_id,
+        amount: order.amount,
+        currency: order.currency || "INR",
+        name: "CounselMate",
+        description: `Legal fee • Booking ${selected.id}`,
+        order_id: order.order_id,
+        handler: () => {
+          toast.success("Payment initiated successfully")
+        },
+        theme: { color: "#2563eb" },
+      }
+  const razorpay = new win.Razorpay(options)
+      razorpay.open()
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Payment failed")
+    }
+  }
+
+  const otherPartyLabel = (b: Booking) => {
+    if (!isProfessional) {
+      const name = b.consultant ? `${b.consultant.first_name} ${b.consultant.last_name}` : `Consultant ${b.consultant_id.slice(0, 6)}`
+      return name
+    }
+    return `Client ${b.user_id.slice(0, 8)}`
+  }
 
   return (
-    <>
-      <style>{css}</style>
-      <div className="msg-root">
-
-        {/* ════════════════ SIDEBAR ════════════════ */}
-        <aside className={`msg-sidebar${mobileView === "chat" ? " mobile-hidden" : ""}`}>
-
-          {/* Sidebar header */}
-          <div className="sidebar-head">
-            <div className="sidebar-title-row">
-              <div>
-                <div className="sidebar-eyebrow">Inbox</div>
-                <h1 className="sidebar-title">Messages</h1>
-              </div>
-              {totalUnread > 0 && (
-                <span className="sidebar-unread-badge">{totalUnread} new</span>
-              )}
-            </div>
-
-            {/* Search */}
-            <div className="sidebar-search">
-              <Search size={14} className="sidebar-search-icon" />
-              <input
-                type="text"
-                placeholder="Search conversations…"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="sidebar-search-input"
-              />
-              {search && (
-                <button className="sidebar-search-clear" onClick={() => setSearch("")}>
-                  <X size={13} />
-                </button>
-              )}
-            </div>
+    <div className="min-h-screen bg-slate-50 p-4">
+      <div className="mx-auto grid max-w-7xl grid-cols-1 gap-4 lg:grid-cols-[320px_1fr]">
+        <div className="rounded-xl border bg-white p-3">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-semibold">{isProfessional ? "Message Requests" : "Messages"}</h2>
+            {loadingBookings && <Loader2 className="h-4 w-4 animate-spin" />}
           </div>
 
-          {/* Conversation list */}
-          <div className="conv-list">
-            {filtered.length === 0 ? (
-              <div className="conv-empty">No conversations found</div>
-            ) : filtered.map(conv => {
-              const msgs = allMessages[conv.id] || []
-              const last = msgs[msgs.length - 1]
-              const isActive = selected?.id === conv.id
+          {isProfessional && (
+            <div className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Incoming requests</div>
+          )}
+          <div className="space-y-2">
+            {(isProfessional ? incomingRequests : visibleBookings).map((b) => {
+              const hs = handshakeByBooking[b.id]
+              const status = hs?.status || "NO_REQUEST"
               return (
                 <button
-                  key={conv.id}
-                  className={`conv-item${isActive ? " active" : ""}`}
-                  onClick={() => handleSelect(conv)}
+                  key={b.id}
+                  onClick={() => setSelected(b)}
+                  className={`w-full rounded-lg border p-3 text-left ${selected?.id === b.id ? "border-blue-600 bg-blue-50" : "hover:bg-slate-50"}`}
                 >
-                  {/* Avatar */}
-                  <div className="conv-avatar-wrap">
-                    <div className={`conv-avatar${isActive ? " active" : ""}`}>
-                      {conv.avatar}
-                    </div>
-                    {conv.online && <span className="conv-online-dot" />}
-                  </div>
-
-                  {/* Body */}
-                  <div className="conv-body">
-                    <div className="conv-row1">
-                      <span className="conv-name">{conv.name}</span>
-                      <span className="conv-time">{conv.timestamp}</span>
-                    </div>
-                    <div className="conv-row2">
-                      <span className="conv-preview">
-                        {last?.text || conv.lastMessage}
-                      </span>
-                      {conv.unread > 0 && (
-                        <span className="conv-unread">{conv.unread}</span>
-                      )}
-                    </div>
-                    <div className="conv-role">{conv.role}</div>
+                  <div className="font-medium">{otherPartyLabel(b)}</div>
+                  <div className="mt-1 text-xs text-slate-500">Booking #{b.id.slice(0, 8)} • {b.status}</div>
+                  <div className="mt-1 text-[11px] font-medium text-slate-600">
+                    {status === "ACTIVE" ? "Conversation active" : status === "PENDING" ? "Request pending" : "No request yet"}
                   </div>
                 </button>
               )
             })}
+            {isProfessional && pendingSentRequests.length > 0 && (
+              <div className="pt-2 text-xs text-slate-500">{pendingSentRequests.length} request(s) awaiting user response.</div>
+            )}
+            {!visibleBookings.length && !loadingBookings && <div className="text-sm text-slate-500">No conversations yet.</div>}
+            {isProfessional && visibleBookings.length > 0 && incomingRequests.length === 0 && (
+              <div className="text-sm text-slate-500">No incoming requests right now.</div>
+            )}
           </div>
-        </aside>
 
-        {/* ════════════════ CHAT ════════════════ */}
-        <main className={`msg-chat${mobileView === "list" ? " mobile-hidden" : ""}`}>
-          {selected ? (
+          {!isProfessional && activeConversations.length > 0 && (
+            <div className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+              {activeConversations.length} active conversation(s)
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-xl border bg-white">
+          {!selected ? (
+            <div className="p-6 text-slate-500">Select a conversation to start.</div>
+          ) : (
             <>
-              {/* Chat header */}
-              <div className="chat-header">
-                <button className="chat-back-btn" onClick={() => setMobileView("list")}>
-                  <ChevronLeft size={18} />
-                </button>
-                <div className="chat-header-avatar-wrap">
-                  <div className="chat-header-avatar">{selected.avatar}</div>
-                  {selected.online && <span className="chat-online-dot" />}
+              <div className="flex items-center justify-between border-b p-4">
+                <div>
+                  <div className="font-semibold">{otherPartyLabel(selected)}</div>
+                  <div className="text-xs text-slate-500">Booking #{selected.id.slice(0, 8)}</div>
                 </div>
-                <div className="chat-header-info">
-                  <div className="chat-header-name">{selected.name}</div>
-                  <div className="chat-header-role">
-                    {selected.online
-                      ? <><span className="chat-status-dot" />Online</>
-                      : selected.role
-                    }
-                  </div>
-                </div>
-                <div className="chat-header-actions">
-                  <button className="chat-action-btn" title="Voice call">
-                    <Phone size={17} />
-                  </button>
-                  <button className="chat-action-btn" title="Video call">
-                    <Video size={17} />
-                  </button>
-                  <button className="chat-action-btn" title="More options">
-                    <MoreVertical size={17} />
-                  </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => startCall(false)} className="rounded-md border p-2 hover:bg-slate-50" disabled={handshake?.status !== "ACTIVE"}><Phone className="h-4 w-4" /></button>
+                  <button onClick={() => startCall(true)} className="rounded-md border p-2 hover:bg-slate-50" disabled={handshake?.status !== "ACTIVE"}><Video className="h-4 w-4" /></button>
+                  {isProfessional && (
+                    <button onClick={() => setFeeModalOpen(true)} className="rounded-md border px-3 py-2 text-sm hover:bg-slate-50">Request Payment</button>
+                  )}
                 </div>
               </div>
 
-              {/* Messages */}
-              <div className="chat-messages">
-                {/* Date group label */}
-                <div className="chat-date-label">Today</div>
-
-                {messages.map((msg, i) => {
-                  const isMine = msg.senderId === 0 || msg.senderName === "You"
-                  const prevMine = i > 0 && (messages[i-1].senderId === 0 || messages[i-1].senderName === "You")
-                  const grouped = isMine === prevMine && i > 0
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`msg-row${isMine ? " mine" : " theirs"}${grouped ? " grouped" : ""}`}
-                    >
-                      {!isMine && !grouped && (
-                        <div className="msg-sender-avatar">{selected.avatar}</div>
-                      )}
-                      {!isMine && grouped && <div className="msg-avatar-spacer" />}
-
-                      <div className="msg-bubble-wrap">
-                        {msg.type === "file" ? (
-                          <div className={`msg-file-bubble${isMine ? " mine" : ""}`}>
-                            <Paperclip size={14} />
-                            <span>Attachment shared</span>
+              <div className="grid gap-4 p-4 lg:grid-cols-[1fr_320px]">
+                <div className="space-y-3">
+                  <div className="min-h-[340px] max-h-[420px] space-y-2 overflow-auto rounded-lg border bg-slate-50 p-3">
+                    {chatLoading ? (
+                      <div className="text-sm text-slate-500">Loading messages...</div>
+                    ) : messages.length === 0 ? (
+                      <div className="text-sm text-slate-500">No messages yet.</div>
+                    ) : (
+                      messages.map((m) => {
+                        const mine = m.sender_id === user?.id
+                        return (
+                          <div key={m.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                            <div className={`max-w-[78%] rounded-xl px-3 py-2 text-sm ${mine ? "bg-blue-600 text-white" : "bg-white border"}`}>
+                              <div>{m.content}</div>
+                              <div className={`mt-1 text-[11px] ${mine ? "text-blue-100" : "text-slate-500"}`}>{new Date(m.created_at).toLocaleTimeString()}</div>
+                            </div>
                           </div>
-                        ) : (
-                          <div className={`msg-bubble${isMine ? " mine" : " theirs"}`}>
-                            {msg.text}
-                          </div>
-                        )}
-                        {!grouped && (
-                          <div className={`msg-meta${isMine ? " mine" : ""}`}>
-                            {msg.timestamp}
+                        )
+                      })
+                    )}
+                    <div ref={chatBottomRef} />
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && sendChat()}
+                      placeholder={handshake?.status === "ACTIVE" ? "Type a message..." : isProfessional ? "Accept request to start chat" : "Send request first to start chat"}
+                      className="h-11 flex-1 rounded-md border px-3"
+                    />
+                    <button onClick={sendChat} className="h-11 rounded-md bg-blue-600 px-4 text-white"><Send className="h-4 w-4" /></button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  <div className="rounded-lg border p-3">
+                    <div className="mb-2 text-sm font-semibold">Message request status</div>
+                    {handshake?.status === "ACTIVE" ? (
+                      <div className="text-sm text-green-700">✅ Request accepted. You can now message and call.</div>
+                    ) : handshake?.status === "PENDING" ? (
+                      <div className="space-y-2">
+                        <div className="text-sm text-amber-700">
+                          {handshake.responder_id === user?.id
+                            ? "New message request received. Accept or deny below."
+                            : "Your message request is pending acceptance."}
+                        </div>
+                        {handshake.responder_id === user?.id && (
+                          <div className="flex gap-2">
+                            <button onClick={() => respondHandshake(true)} className="rounded-md border px-3 py-1 text-sm"><Check className="mr-1 inline h-3 w-3" />Accept</button>
+                            <button onClick={() => respondHandshake(false)} className="rounded-md border px-3 py-1 text-sm"><X className="mr-1 inline h-3 w-3" />Reject</button>
                           </div>
                         )}
                       </div>
-                    </div>
-                  )
-                })}
-                <div ref={endRef} />
-              </div>
+                    ) : (
+                      <button
+                        onClick={() => setTermsOpen(true)}
+                        className="rounded-md border px-3 py-2 text-sm"
+                        disabled={isProfessional}
+                      >
+                        {isProfessional ? "Waiting for user request" : "Open terms & send request"}
+                      </button>
+                    )}
+                  </div>
 
-              {/* Input */}
-              <div className="chat-input-area">
-                <div className="chat-input-wrap">
-                  <button className="chat-input-icon-btn" title="Attach file">
-                    <Paperclip size={16} />
-                  </button>
-                  <input
-                    ref={inputRef}
-                    type="text"
-                    value={messageText}
-                    onChange={e => setMessageText(e.target.value)}
-                    onKeyDown={e => e.key === "Enter" && !e.shiftKey && handleSend()}
-                    placeholder={`Message ${selected.name.split(" ")[0]}…`}
-                    className="chat-input"
-                  />
-                  <button
-                    className={`chat-send-btn${messageText.trim() ? " active" : ""}`}
-                    onClick={handleSend}
-                    disabled={!messageText.trim()}
-                  >
-                    <Send size={16} />
-                  </button>
+                  <div className="rounded-lg border p-3">
+                    <div className="mb-2 text-sm font-semibold">Fee Requests</div>
+                    <div className="space-y-2">
+                      {feeRequests.map((r) => (
+                        <div key={r.id} className="rounded-md border p-2 text-sm">
+                          <div className="flex items-center justify-between">
+                            <div className="font-medium">₹{r.amount_rupees}</div>
+                            <div className="text-xs text-slate-500">{r.status}</div>
+                          </div>
+                          <div className="text-xs text-slate-500">Platform: ₹{r.platform_fee_rupees} • Pro payout: ₹{r.consultant_payout_rupees}</div>
+                          {r.notes && <div className="mt-1 text-xs">{r.notes}</div>}
+                          {!isProfessional && r.status === "PENDING" && (
+                            <button onClick={() => payFeeRequest(r)} className="mt-2 rounded-md bg-emerald-600 px-3 py-1 text-xs text-white"><IndianRupee className="mr-1 inline h-3 w-3" />Pay now</button>
+                          )}
+                        </div>
+                      ))}
+                      {feeRequests.length === 0 && <div className="text-xs text-slate-500">No fee requests yet.</div>}
+                    </div>
+                  </div>
                 </div>
-                <div className="chat-input-hint">Press Enter to send · Shift+Enter for new line</div>
               </div>
             </>
-          ) : (
-            <div className="chat-empty">
-              <div className="chat-empty-icon"><MessageSquare size={28} /></div>
-              <div className="chat-empty-title">Select a conversation</div>
-              <div className="chat-empty-desc">Choose from your existing conversations to start messaging.</div>
-            </div>
           )}
-        </main>
+        </div>
       </div>
-    </>
+
+      {termsOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-xl rounded-xl bg-white p-5">
+            <h3 className="text-lg font-semibold">Terms & Conditions for Messaging / Calls</h3>
+            <div className="mt-3 max-h-60 overflow-auto rounded-md border bg-slate-50 p-3 text-sm text-slate-700">
+              <p>1. Both parties must agree before any messaging, voice, or video communication.</p>
+              <p className="mt-2">2. Communication is for legal/professional consultation purposes only.</p>
+              <p className="mt-2">3. Payment terms and platform fees are displayed before payment.</p>
+              <p className="mt-2">4. Abuse, harassment, and non-compliant behavior may lead to account action.</p>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={termsAccepted} onChange={(e) => setTermsAccepted(e.target.checked)} />
+              I agree to the terms and conditions
+            </label>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setTermsOpen(false)}>Cancel</button>
+              <button className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white" onClick={requestHandshake}>Agree & Request Handshake</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {feeModalOpen && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-5">
+            <h3 className="text-lg font-semibold">Request Legal Fee</h3>
+            <div className="mt-3 space-y-2">
+              <input value={feeAmount} onChange={(e) => setFeeAmount(e.target.value)} className="h-10 w-full rounded-md border px-3" placeholder="Amount in INR" />
+              <textarea value={feeNote} onChange={(e) => setFeeNote(e.target.value)} className="w-full rounded-md border p-2" rows={3} placeholder="Notes" />
+              <div className="text-xs text-slate-600">Platform fee ≈ 5%, consultant payout ≈ 95% (computed in backend).</div>
+            </div>
+            <div className="mt-4 flex justify-end gap-2">
+              <button className="rounded-md border px-3 py-2 text-sm" onClick={() => setFeeModalOpen(false)}>Cancel</button>
+              <button className="rounded-md bg-blue-600 px-3 py-2 text-sm text-white" onClick={createFeeRequest}>Send Request</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {callOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4">
+          <div className="grid h-[84vh] w-full max-w-6xl grid-cols-1 gap-4 rounded-xl bg-slate-900 p-4 text-white lg:grid-cols-[1fr_360px]">
+            <div className="relative rounded-lg bg-black">
+              <video ref={remoteVideoRef} autoPlay playsInline className="h-full w-full rounded-lg object-cover" />
+              <div className="absolute bottom-4 right-4 h-36 w-56 overflow-hidden rounded-md border border-white/20 bg-black">
+                <video ref={localVideoRef} autoPlay muted playsInline className="h-full w-full object-cover" />
+              </div>
+              <div className="absolute left-1/2 bottom-4 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/60 px-3 py-2">
+                <button
+                  onClick={() => {
+                    const t = localStreamRef.current?.getAudioTracks()[0]
+                    if (!t) return
+                    t.enabled = !t.enabled
+                    setMuted(!t.enabled)
+                  }}
+                  className={`rounded-full p-3 ${muted ? "bg-red-600" : "bg-slate-700"}`}
+                >
+                  {muted ? <MicOff className="h-4 w-4" /> : <Mic className="h-4 w-4" />}
+                </button>
+                <button
+                  onClick={() => {
+                    const t = localStreamRef.current?.getVideoTracks()[0]
+                    if (!t) return
+                    t.enabled = !t.enabled
+                    setCameraOff(!t.enabled)
+                  }}
+                  className={`rounded-full p-3 ${cameraOff ? "bg-red-600" : "bg-slate-700"}`}
+                >
+                  {cameraOff ? <VideoOff className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                </button>
+                <button onClick={() => setChatPaneInCall((v) => !v)} className="rounded-full bg-slate-700 p-3"><MessageSquare className="h-4 w-4" /></button>
+                <button
+                  onClick={() => {
+                    if (selected) sendWS({ type: "call_end", booking_id: selected.id, receiver_id: counterpartId || undefined })
+                    endCall()
+                  }}
+                  className="rounded-full bg-red-600 px-4 py-3 text-sm"
+                >
+                  End
+                </button>
+              </div>
+            </div>
+
+            {chatPaneInCall && (
+              <div className="flex h-full flex-col rounded-lg border border-white/20 bg-slate-950/60 p-3">
+                <div className="mb-2 text-sm font-semibold">In-call chat</div>
+                <div className="flex-1 space-y-2 overflow-auto text-xs">
+                  {messages.slice(-80).map((m) => (
+                    <div key={m.id} className={`rounded p-2 ${m.sender_id === user?.id ? "bg-blue-700" : "bg-slate-700"}`}>{m.content}</div>
+                  ))}
+                </div>
+                <div className="mt-2 flex gap-2">
+                  <input value={messageInput} onChange={(e) => setMessageInput(e.target.value)} className="h-9 flex-1 rounded border border-white/20 bg-transparent px-2 text-sm" placeholder="Type..." />
+                  <button onClick={sendChat} className="rounded bg-blue-600 px-3 text-sm">Send</button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
-
-/* ─── Styles ──────────────────────────────────────── */
-
-const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap');
-
-  :root {
-    --ink: #0d0f1a;
-    --ink-soft: #3d3f52;
-    --ink-muted: #7b7d94;
-    --cream: #f7f5f0;
-    --cream-dark: #e8e4dc;
-    --gold: #c9a84c;
-    --blue-deep: #1a2b6d;
-    --blue-bright: #4169e1;
-    --blue-bubble: #4169e1;
-    --surface: #ffffff;
-  }
-
-  .msg-root {
-    font-family: 'DM Sans', sans-serif;
-    display: flex;
-    height: 100dvh;
-    background: var(--cream);
-    color: var(--ink);
-    overflow: hidden;
-  }
-
-  /* ════════════════ SIDEBAR ════════════════ */
-  .msg-sidebar {
-    width: 320px;
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    border-right: 1px solid var(--cream-dark);
-    overflow: hidden;
-  }
-
-  .sidebar-head {
-    padding: 1.75rem 1.5rem 1.1rem;
-    border-bottom: 1px solid var(--cream-dark);
-    flex-shrink: 0;
-  }
-
-  .sidebar-title-row {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-  .sidebar-eyebrow {
-    font-size: 0.68rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--gold);
-    font-weight: 500;
-    margin-bottom: 0.2rem;
-  }
-  .sidebar-title {
-    font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 1.6rem;
-    color: var(--ink);
-    font-weight: 400;
-    line-height: 1.1;
-  }
-  .sidebar-unread-badge {
-    font-size: 0.68rem;
-    font-weight: 700;
-    padding: 0.25rem 0.65rem;
-    border-radius: 100px;
-    background: var(--blue-bright);
-    color: #fff;
-    margin-top: 4px;
-    letter-spacing: 0.02em;
-  }
-
-  .sidebar-search {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--cream);
-    border: 1.5px solid var(--cream-dark);
-    border-radius: 10px;
-    padding: 0.5rem 0.75rem;
-    transition: border-color 0.2s;
-  }
-  .sidebar-search:focus-within {
-    border-color: var(--blue-bright);
-    background: #fff;
-  }
-  .sidebar-search-icon { color: var(--ink-muted); flex-shrink: 0; }
-  .sidebar-search-input {
-    flex: 1; background: none; border: none; outline: none;
-    font-size: 0.82rem; color: var(--ink);
-    font-family: 'DM Sans', sans-serif;
-  }
-  .sidebar-search-input::placeholder { color: var(--ink-muted); }
-  .sidebar-search-clear {
-    background: none; border: none; cursor: pointer;
-    color: var(--ink-muted); display: flex; align-items: center;
-    padding: 0; transition: color 0.15s;
-  }
-  .sidebar-search-clear:hover { color: var(--ink); }
-
-  /* Conversation list */
-  .conv-list {
-    flex: 1;
-    overflow-y: auto;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cream-dark) transparent;
-  }
-  .conv-empty {
-    padding: 2rem 1.5rem;
-    font-size: 0.82rem;
-    color: var(--ink-muted);
-    text-align: center;
-  }
-
-  .conv-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.875rem;
-    padding: 1rem 1.5rem;
-    width: 100%;
-    text-align: left;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid var(--cream-dark);
-    cursor: pointer;
-    font-family: 'DM Sans', sans-serif;
-    transition: background 0.15s;
-  }
-  .conv-item:hover { background: var(--cream); }
-  .conv-item.active { background: var(--cream); }
-
-  .conv-avatar-wrap { position: relative; flex-shrink: 0; }
-  .conv-avatar {
-    width: 40px; height: 40px;
-    border-radius: 50%;
-    background: var(--ink);
-    color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 1.05rem;
-    transition: background 0.15s;
-  }
-  .conv-avatar.active { background: var(--blue-deep); }
-  .conv-online-dot {
-    position: absolute; bottom: 1px; right: 1px;
-    width: 9px; height: 9px; border-radius: 50%;
-    background: #22c55e;
-    border: 2px solid var(--surface);
-  }
-
-  .conv-body { flex: 1; min-width: 0; }
-  .conv-row1 {
-    display: flex; align-items: baseline;
-    justify-content: space-between; gap: 0.5rem;
-    margin-bottom: 0.15rem;
-  }
-  .conv-name {
-    font-size: 0.875rem; font-weight: 600; color: var(--ink);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  }
-  .conv-time { font-size: 0.7rem; color: var(--ink-muted); flex-shrink: 0; }
-  .conv-row2 { display: flex; align-items: center; justify-content: space-between; gap: 0.4rem; }
-  .conv-preview {
-    font-size: 0.78rem; color: var(--ink-muted); font-weight: 300;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    flex: 1;
-  }
-  .conv-unread {
-    width: 18px; height: 18px; border-radius: 50%;
-    background: var(--blue-bright); color: #fff;
-    font-size: 0.62rem; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .conv-role { font-size: 0.68rem; color: var(--ink-muted); margin-top: 0.2rem; }
-
-  /* ════════════════ CHAT ════════════════ */
-  .msg-chat {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    background: var(--surface);
-    overflow: hidden;
-    min-width: 0;
-  }
-
-  /* Chat header */
-  .chat-header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid var(--cream-dark);
-    flex-shrink: 0;
-    background: var(--surface);
-  }
-  .chat-back-btn {
-    display: none;
-    background: none; border: none; cursor: pointer;
-    color: var(--ink-muted); padding: 0.25rem;
-    border-radius: 8px; transition: color 0.15s, background 0.15s;
-  }
-  .chat-back-btn:hover { color: var(--ink); background: var(--cream); }
-  .chat-header-avatar-wrap { position: relative; flex-shrink: 0; }
-  .chat-header-avatar {
-    width: 40px; height: 40px; border-radius: 50%;
-    background: var(--blue-deep); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 1.1rem;
-  }
-  .chat-online-dot {
-    position: absolute; bottom: 1px; right: 1px;
-    width: 9px; height: 9px; border-radius: 50%;
-    background: #22c55e; border: 2px solid var(--surface);
-  }
-  .chat-header-info { flex: 1; min-width: 0; }
-  .chat-header-name {
-    font-size: 0.925rem; font-weight: 600; color: var(--ink);
-  }
-  .chat-header-role {
-    font-size: 0.75rem; color: var(--ink-muted);
-    display: flex; align-items: center; gap: 0.35rem; margin-top: 0.1rem;
-  }
-  .chat-status-dot {
-    width: 6px; height: 6px; border-radius: 50%; background: #22c55e;
-  }
-  .chat-header-actions {
-    display: flex; gap: 0.25rem;
-  }
-  .chat-action-btn {
-    width: 34px; height: 34px; border-radius: 9px;
-    background: transparent; border: none; cursor: pointer;
-    color: var(--ink-muted);
-    display: flex; align-items: center; justify-content: center;
-    transition: background 0.15s, color 0.15s;
-  }
-  .chat-action-btn:hover { background: var(--cream); color: var(--ink); }
-
-  /* Messages area */
-  .chat-messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.5rem 1.5rem 0.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-    scrollbar-width: thin;
-    scrollbar-color: var(--cream-dark) transparent;
-    background: var(--cream);
-  }
-
-  .chat-date-label {
-    text-align: center;
-    font-size: 0.68rem;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--ink-muted);
-    margin: 0.5rem 0 0.75rem;
-  }
-
-  .msg-row {
-    display: flex;
-    align-items: flex-end;
-    gap: 0.6rem;
-    animation: msgIn 0.25s ease both;
-  }
-  .msg-row.mine { flex-direction: row-reverse; }
-  .msg-row.grouped { margin-top: -0.1rem; }
-
-  .msg-sender-avatar {
-    width: 28px; height: 28px; border-radius: 50%;
-    background: var(--ink); color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-family: 'Instrument Serif', Georgia, serif;
-    font-size: 0.8rem; flex-shrink: 0;
-  }
-  .msg-avatar-spacer { width: 28px; flex-shrink: 0; }
-
-  .msg-bubble-wrap {
-    display: flex;
-    flex-direction: column;
-    max-width: 62%;
-    gap: 0.2rem;
-  }
-  .msg-row.mine .msg-bubble-wrap { align-items: flex-end; }
-
-  .msg-bubble {
-    padding: 0.65rem 1rem;
-    border-radius: 14px;
-    font-size: 0.875rem;
-    line-height: 1.55;
-    word-break: break-word;
-  }
-  .msg-bubble.theirs {
-    background: var(--surface);
-    color: var(--ink);
-    border-bottom-left-radius: 4px;
-    border: 1px solid var(--cream-dark);
-  }
-  .msg-bubble.mine {
-    background: var(--blue-bright);
-    color: #fff;
-    border-bottom-right-radius: 4px;
-  }
-  .msg-row.grouped .msg-bubble.theirs { border-bottom-left-radius: 14px; }
-  .msg-row.grouped .msg-bubble.mine  { border-bottom-right-radius: 14px; }
-
-  .msg-file-bubble {
-    display: inline-flex; align-items: center; gap: 0.5rem;
-    padding: 0.6rem 1rem;
-    border-radius: 12px;
-    background: var(--surface);
-    border: 1.5px solid var(--cream-dark);
-    font-size: 0.8rem;
-    color: var(--ink-soft);
-  }
-  .msg-file-bubble.mine {
-    background: rgba(255,255,255,0.15);
-    border-color: rgba(255,255,255,0.25);
-    color: rgba(255,255,255,0.9);
-  }
-
-  .msg-meta {
-    font-size: 0.67rem;
-    color: var(--ink-muted);
-    padding: 0 0.25rem;
-  }
-  .msg-meta.mine { text-align: right; color: var(--ink-muted); }
-
-  /* Input area */
-  .chat-input-area {
-    padding: 1rem 1.5rem 1.25rem;
-    border-top: 1px solid var(--cream-dark);
-    background: var(--surface);
-    flex-shrink: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-  .chat-input-wrap {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    background: var(--cream);
-    border: 1.5px solid var(--cream-dark);
-    border-radius: 12px;
-    padding: 0.55rem 0.6rem 0.55rem 0.9rem;
-    transition: border-color 0.2s, background 0.2s;
-  }
-  .chat-input-wrap:focus-within {
-    border-color: var(--blue-bright);
-    background: #fff;
-  }
-  .chat-input-icon-btn {
-    background: none; border: none; cursor: pointer;
-    color: var(--ink-muted); padding: 0.3rem;
-    border-radius: 7px; display: flex; align-items: center;
-    transition: color 0.15s, background 0.15s; flex-shrink: 0;
-  }
-  .chat-input-icon-btn:hover { color: var(--ink); background: var(--cream-dark); }
-  .chat-input {
-    flex: 1; background: none; border: none; outline: none;
-    font-size: 0.875rem; color: var(--ink);
-    font-family: 'DM Sans', sans-serif;
-  }
-  .chat-input::placeholder { color: var(--ink-muted); }
-
-  .chat-send-btn {
-    width: 34px; height: 34px; border-radius: 9px;
-    background: var(--cream-dark); color: var(--ink-muted);
-    border: none; cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-    transition: background 0.2s, color 0.2s, transform 0.15s, box-shadow 0.2s;
-  }
-  .chat-send-btn.active {
-    background: var(--blue-bright); color: #fff;
-  }
-  .chat-send-btn.active:hover {
-    background: #3057cc;
-    transform: scale(1.05);
-    box-shadow: 0 4px 14px rgba(65,105,225,0.35);
-  }
-  .chat-send-btn:disabled { cursor: default; }
-
-  .chat-input-hint {
-    font-size: 0.68rem;
-    color: var(--ink-muted);
-    padding: 0 0.25rem;
-  }
-
-  /* Empty state */
-  .chat-empty {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center; gap: 0.75rem;
-    text-align: center; padding: 2rem; background: var(--cream);
-  }
-  .chat-empty-icon {
-    width: 56px; height: 56px; border-radius: 16px;
-    background: var(--cream-dark); color: var(--ink-muted);
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 0.25rem;
-  }
-  .chat-empty-title { font-size: 1rem; font-weight: 600; color: var(--ink); }
-  .chat-empty-desc { font-size: 0.83rem; color: var(--ink-muted); font-weight: 300; max-width: 280px; }
-
-  /* ── Keyframes ── */
-  @keyframes msgIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: none; }
-  }
-
-  /* ── Responsive ── */
-  @media (max-width: 768px) {
-    .msg-sidebar { width: 100%; }
-    .msg-sidebar.mobile-hidden { display: none; }
-    .msg-chat.mobile-hidden { display: none; }
-    .chat-back-btn { display: flex; }
-    .chat-input-hint { display: none; }
-    .chat-messages { padding: 1rem 1rem 0.5rem; }
-    .msg-bubble-wrap { max-width: 80%; }
-  }
-`

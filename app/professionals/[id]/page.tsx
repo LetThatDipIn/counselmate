@@ -33,17 +33,29 @@ const availabilityMeta = (a: string) => {
 export default function ProfessionalProfilePage() {
   const params = useParams()
   const router = useRouter()
-  const { isAuthenticated } = useAuth()
+  const { user, isAuthenticated } = useAuth()
   const { profile, loading, error } = useProfile(params.id as string)
 
   const [dialogOpen, setDialogOpen]       = useState(false)
   const [contactLoading, setLoading2]     = useState(false)
   const [contactForm, setContactForm]     = useState({ subject: '', message: '' })
 
+  const isOwnProfile = !!(user && profile && user.id === profile.user_id)
+  const isProfessionalViewer = user?.role === 'PROFESSIONAL'
+  const canMessageProfessional = !!(isAuthenticated && !isOwnProfile && !isProfessionalViewer)
+
   const handleContact = async () => {
     if (!isAuthenticated) {
       toast.error('Please login to contact this professional')
       router.push('/auth/login')
+      return
+    }
+    if (isOwnProfile) {
+      toast.error('You cannot contact yourself')
+      return
+    }
+    if (isProfessionalViewer) {
+      toast.error('Professionals cannot message other professionals')
       return
     }
     if (!contactForm.subject.trim() || !contactForm.message.trim()) {
@@ -170,8 +182,33 @@ export default function ProfessionalProfilePage() {
 
                 {/* CTA */}
                 <div className="prof-hero-cta">
-                  <button className="prof-contact-btn" onClick={() => setDialogOpen(true)}>
+                  <button
+                    className="prof-contact-btn"
+                    onClick={() => {
+                      if (!canMessageProfessional) {
+                        toast.error(isOwnProfile ? 'You cannot message yourself' : 'Professionals cannot message other professionals')
+                        return
+                      }
+                      setDialogOpen(true)
+                    }}
+                    disabled={!canMessageProfessional}
+                    title={!canMessageProfessional ? (isOwnProfile ? 'You cannot message yourself' : 'Professional-to-professional messaging is disabled') : undefined}
+                  >
                     <Mail size={15} /> Contact Professional
+                  </button>
+                  <button
+                    className="prof-contact-btn"
+                    onClick={() => {
+                      if (!canMessageProfessional) {
+                        toast.error(isOwnProfile ? 'You cannot message yourself' : 'Professionals cannot message other professionals')
+                        return
+                      }
+                      router.push(`/messages?consultant=${profile.user_id}`)
+                    }}
+                    disabled={!canMessageProfessional}
+                    title={!canMessageProfessional ? (isOwnProfile ? 'You cannot message yourself' : 'Professional-to-professional messaging is disabled') : undefined}
+                  >
+                    <Calendar size={15} /> Open Messages
                   </button>
                   {profile.hourly_rate && (
                     <div className="prof-rate-pill">

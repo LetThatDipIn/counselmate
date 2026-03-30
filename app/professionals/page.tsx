@@ -9,7 +9,7 @@ import {
 } from "lucide-react"
 import { searchAPI, useTags, profilesAPI } from "@/lib/api"
 import { useAuth } from "@/lib/context/auth-context"
-import type { Profile, ProfileSearchParams } from "@/lib/api/types"
+import type { ProfessionType, Profile, ProfileSearchParams } from "@/lib/api/types"
 import { toast } from "sonner"
 
 const LIMIT = 12
@@ -53,7 +53,7 @@ export default function ProfessionalsPage() {
     try {
       const params: ProfileSearchParams = {
         query: searchTerm || undefined,
-        profession: professionFilter as any || undefined,
+        profession: (professionFilter || undefined) as ProfessionType | undefined,
         location: locationFilter || undefined,
         availability: availabilityFilter || undefined,
         sort: sortBy,
@@ -61,7 +61,8 @@ export default function ProfessionalsPage() {
         limit: LIMIT,
       }
       const res = await searchAPI.search(params)
-      setProfiles(res.profiles || [])
+      const filtered = (res.profiles || []).filter((p) => p.user_id !== user?.id)
+      setProfiles(filtered)
       setTotal(res.total || 0)
     } catch {
       toast.error('Failed to load professionals')
@@ -69,7 +70,7 @@ export default function ProfessionalsPage() {
     } finally {
       setLoading(false)
     }
-  }, [searchTerm, professionFilter, locationFilter, availabilityFilter, sortBy, page])
+  }, [searchTerm, professionFilter, locationFilter, availabilityFilter, sortBy, page, user?.id])
 
   useEffect(() => { doSearch() }, [doSearch])
 

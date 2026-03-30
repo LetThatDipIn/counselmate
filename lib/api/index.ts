@@ -15,4 +15,5 @@ export * from './services';
 export * from './payments';
 export * from './bookings';
 export * from './chat';
+export * from './realtime';
 export * from '../hooks/use-api';
