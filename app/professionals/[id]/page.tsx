@@ -173,6 +173,12 @@ export default function ProfessionalProfilePage() {
                   <button className="prof-contact-btn" onClick={() => setDialogOpen(true)}>
                     <Mail size={15} /> Contact Professional
                   </button>
+                  <button
+                    className="prof-contact-btn"
+                    onClick={() => router.push(`/messages?consultant=${profile.user_id}`)}
+                  >
+                    <Calendar size={15} /> Open Messages
+                  </button>
                   {profile.hourly_rate && (
                     <div className="prof-rate-pill">
                       <IndianRupee size={13} />
