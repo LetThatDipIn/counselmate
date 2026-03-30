@@ -16,7 +16,6 @@ export default function GoogleCallbackPage() {
   useEffect(() => {
     const handleCallback = async () => {
       const code = searchParams.get('code');
-      const state = searchParams.get('state');
       const errorParam = searchParams.get('error');
 
       if (errorParam) {
@@ -74,32 +73,11 @@ export default function GoogleCallbackPage() {
           console.debug('[GoogleCallback] Refresh token stored');
         }
 
-        // Check if there's a pending profession type (for professional registration)
-        let user = response.user;
+        // Always trust backend user role to avoid stale client-side role overrides.
+        const user = response.user;
         if (typeof window !== 'undefined') {
-          const pendingProfessionType = sessionStorage.getItem('pendingProfessionType');
-          const pendingRole = sessionStorage.getItem('pendingRole');
-          
-          if (pendingRole === 'PROFESSIONAL' && pendingProfessionType) {
-            // Update user role and profession type
-            user = {
-              ...user,
-              role: 'PROFESSIONAL',
-              profession_type: pendingProfessionType,
-            };
-            console.debug('[GoogleCallback] Applied pending profession type:', pendingProfessionType);
-            
-            // Clean up session storage
-            sessionStorage.removeItem('pendingProfessionType');
-            sessionStorage.removeItem('pendingRole');
-          } else if (pendingRole === 'APPRENTICE') {
-            // Ensure APPRENTICE role for client signups
-            user = {
-              ...user,
-              role: 'APPRENTICE',
-            };
-            sessionStorage.removeItem('pendingRole');
-          }
+          sessionStorage.removeItem('pendingProfessionType');
+          sessionStorage.removeItem('pendingRole');
         }
         
         // Set user in context

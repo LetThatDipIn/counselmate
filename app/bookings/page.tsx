@@ -31,7 +31,7 @@ export default function BookingHistoryPage() {
     const loadBookings = async () => {
       try {
         setLoading(true)
-        const result = user?.role === "PROFESSIONAL"
+        const result = (user?.role || "").toString().toUpperCase() === "PROFESSIONAL"
           ? await bookingsAPI.getConsultantBookings(1, 50)
           : await bookingsAPI.getMyBookings(1, 50)
         setBookings(result.bookings || [])
